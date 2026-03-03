@@ -1,0 +1,152 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.0",
+  "variables": {
+    "app_name": { "value": "web-api" },
+    "environment": { "value": "prod" }
+  },
+  "planned_values": {
+    "root_module": {
+      "resources": [
+        {
+          "address": "local_file.app_config",
+          "type": "local_file",
+          "name": "app_config",
+          "provider_name": "registry.terraform.io/hashicorp/local",
+          "schema_version": 0,
+          "values": {
+            "filename": "./output/app.conf",
+            "file_permission": "0644",
+            "content": "app_name = web-api\nenvironment = prod\n",
+            "tags": {
+              "Name": "prod-file-app-config",
+              "Environment": "prod",
+              "ManagedBy": "terraform",
+              "Owner": "platform-team"
+            }
+          }
+        },
+        {
+          "address": "local_file.database_config",
+          "type": "local_file",
+          "name": "database_config",
+          "provider_name": "registry.terraform.io/hashicorp/local",
+          "schema_version": 0,
+          "values": {
+            "filename": "./output/database.conf",
+            "file_permission": "0640",
+            "content": "host = db.prod.internal\nport = 5432\n",
+            "tags": {
+              "Name": "prod-file-database-config",
+              "Environment": "prod",
+              "ManagedBy": "terraform",
+              "Owner": "platform-team"
+            }
+          }
+        },
+        {
+          "address": "local_file.insecure_example",
+          "type": "local_file",
+          "name": "insecure_example",
+          "provider_name": "registry.terraform.io/hashicorp/local",
+          "schema_version": 0,
+          "values": {
+            "filename": "./output/insecure.conf",
+            "file_permission": "0777",
+            "content": "# This file has insecure permissions — policy should catch this\n",
+            "tags": {
+              "Name": "BadName",
+              "Environment": "production",
+              "ManagedBy": "manual"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "resource_changes": [
+    {
+      "address": "local_file.app_config",
+      "type": "local_file",
+      "name": "app_config",
+      "provider_name": "registry.terraform.io/hashicorp/local",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {
+          "filename": "./output/app.conf",
+          "file_permission": "0644",
+          "content": "app_name = web-api\nenvironment = prod\n",
+          "tags": {
+            "Name": "prod-file-app-config",
+            "Environment": "prod",
+            "ManagedBy": "terraform",
+            "Owner": "platform-team"
+          }
+        }
+      }
+    },
+    {
+      "address": "local_file.database_config",
+      "type": "local_file",
+      "name": "database_config",
+      "provider_name": "registry.terraform.io/hashicorp/local",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {
+          "filename": "./output/database.conf",
+          "file_permission": "0640",
+          "content": "host = db.prod.internal\nport = 5432\n",
+          "tags": {
+            "Name": "prod-file-database-config",
+            "Environment": "prod",
+            "ManagedBy": "terraform",
+            "Owner": "platform-team"
+          }
+        }
+      }
+    },
+    {
+      "address": "local_file.insecure_example",
+      "type": "local_file",
+      "name": "insecure_example",
+      "provider_name": "registry.terraform.io/hashicorp/local",
+      "change": {
+        "actions": ["create"],
+        "before": null,
+        "after": {
+          "filename": "./output/insecure.conf",
+          "file_permission": "0777",
+          "content": "# This file has insecure permissions — policy should catch this\n",
+          "tags": {
+            "Name": "BadName",
+            "Environment": "production",
+            "ManagedBy": "manual"
+          }
+        }
+      }
+    }
+  ],
+  "configuration": {
+    "root_module": {
+      "resources": [
+        {
+          "address": "local_file.app_config",
+          "type": "local_file",
+          "name": "app_config"
+        },
+        {
+          "address": "local_file.database_config",
+          "type": "local_file",
+          "name": "database_config"
+        },
+        {
+          "address": "local_file.insecure_example",
+          "type": "local_file",
+          "name": "insecure_example"
+        }
+      ]
+    }
+  }
+}

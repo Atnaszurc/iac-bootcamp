@@ -1,0 +1,31 @@
+{
+  "mock": {
+    "tfplan/v2": {
+      "resource_changes": {
+        "local_file.no_managed_by": {
+          "address": "local_file.no_managed_by",
+          "type": "local_file",
+          "mode": "managed",
+          "change": {
+            "actions": ["create"],
+            "before": null,
+            "after": {
+              "content": "test content",
+              "filename": "test.txt",
+              "file_permission": "0644",
+              "tags": {
+                "Name": "dev-file-config",
+                "Environment": "dev"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "test": {
+    "main": false,
+    "no_world_writable_permissions": true,
+    "require_managed_by_tag": false
+  }
+}

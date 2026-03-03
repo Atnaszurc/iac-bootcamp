@@ -1,0 +1,95 @@
+# Sentinel Policy: security-standards
+#
+# Purpose: Enforce security standards for Terraform-managed resources.
+#          This is the Sentinel equivalent of the OPA security.rego policy.
+#
+# Rules:
+#   - File permissions must not be world-writable (no 0777, 0666, etc.)
+#   - All resources must have ManagedBy = "terraform" tag
+#   - Production resources must have an Owner tag
+#
+# Enforcement: soft-mandatory (can be overridden by workspace admins)
+#
+# Sentinel version: >= 0.18
+
+import "tfplan/v2" as tfplan
+import "strings"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Constants
+# ─────────────────────────────────────────────────────────────────────────────
+
+# World-writable permission patterns to block
+world_writable_patterns = ["0777", "0666", "0776", "0667"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Resource filtering
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Filter resources being created or updated (skip deletes)
+resources = filter tfplan.resource_changes as address, rc {
+  rc.mode is "managed" and
+  (rc.change.actions contains "create" or
+   rc.change.actions contains "update") and
+  not (rc.change.actions contains "delete")
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rule 1: No world-writable file permissions
+# ─────────────────────────────────────────────────────────────────────────────
+
+no_world_writable_permissions = rule {
+  all resources as address, rc {
+    # Only check if file_permission attribute exists
+    rc.change.after.file_permission is null or
+    not strings.has_suffix(string(rc.change.after.file_permission), "777") and
+    not strings.has_suffix(string(rc.change.after.file_permission), "666") and
+    not strings.has_suffix(string(rc.change.after.file_permission), "776") and
+    not strings.has_suffix(string(rc.change.after.file_permission), "667") else error(
+      "Resource '" + address + "' has world-writable permissions '" +
+      string(rc.change.after.file_permission) +
+      "'. This is a security risk. Use more restrictive permissions.",
+    )
+  }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rule 2: All resources must have ManagedBy = "terraform" tag
+# ─────────────────────────────────────────────────────────────────────────────
+
+require_managed_by_tag = rule {
+  all resources as address, rc {
+    # Check if tags exist and contain ManagedBy with correct value
+    rc.change.after.tags is not null and
+    (rc.change.after.tags else {}) contains "ManagedBy" and
+    rc.change.after.tags["ManagedBy"] is "terraform" else error(
+      "Resource '" + address + "' (" + rc.type + ") must have tag ManagedBy = 'terraform'",
+    )
+  }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rule 3: Production resources must have an Owner tag
+# ─────────────────────────────────────────────────────────────────────────────
+
+require_owner_for_prod = rule {
+  all resources as address, rc {
+    # Only enforce for production resources (Environment = "prod")
+    rc.change.after.tags is null or
+    not ((rc.change.after.tags else {}) contains "Environment") or
+    rc.change.after.tags["Environment"] is not "prod" or
+    (rc.change.after.tags contains "Owner" else error(
+      "Production resource '" + address + "' (" + rc.type + ") must have an 'Owner' tag",
+    ))
+  }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main rule — policy passes if all rules pass
+# ─────────────────────────────────────────────────────────────────────────────
+
+main = rule {
+  no_world_writable_permissions and
+  require_managed_by_tag and
+  require_owner_for_prod
+}

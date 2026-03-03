@@ -1,0 +1,27 @@
+{
+  "environment": "dev",
+  "servers": [
+    {
+      "name": "web-01",
+      "role": "frontend",
+      "port": 80,
+      "enabled": true
+    },
+    {
+      "name": "api-01",
+      "role": "backend",
+      "port": 8080,
+      "enabled": true
+    },
+    {
+      "name": "db-01",
+      "role": "database",
+      "port": 5432,
+      "enabled": false
+    }
+  ],
+  "tags": {
+    "project": "hashi-training",
+    "owner": "platform-team"
+  }
+}

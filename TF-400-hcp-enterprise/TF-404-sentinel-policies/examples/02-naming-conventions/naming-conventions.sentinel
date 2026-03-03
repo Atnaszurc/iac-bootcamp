@@ -1,0 +1,94 @@
+# Sentinel Policy: naming-conventions
+#
+# Purpose: Enforce naming conventions for Terraform-managed resources.
+#          This is the Sentinel equivalent of the OPA naming.rego policy.
+#
+# Rules:
+#   - All resources must have a "Name" tag
+#   - Name tag must follow pattern: <env>-<type>-<name> (e.g. dev-vm-webserver)
+#   - Environment tag must be one of: dev, staging, prod
+#
+# Enforcement: soft-mandatory (can be overridden by workspace admins)
+#
+# Sentinel version: >= 0.18
+
+import "tfplan/v2" as tfplan
+import "strings"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Constants
+# ─────────────────────────────────────────────────────────────────────────────
+
+allowed_environments = ["dev", "staging", "prod"]
+
+# Valid name pattern: <env>-<type>-<name>
+# Examples: dev-vm-webserver, prod-db-primary, staging-lb-api
+name_pattern = "^(dev|staging|prod)-[a-z]+-[a-z0-9-]+$"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Resource filtering
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Filter resources being created or updated (skip deletes)
+resources = filter tfplan.resource_changes as address, rc {
+  rc.mode is "managed" and
+  (rc.change.actions contains "create" or
+   rc.change.actions contains "update") and
+  not (rc.change.actions contains "delete")
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rule 1: All resources must have a Name tag
+# ─────────────────────────────────────────────────────────────────────────────
+
+require_name_tag = rule {
+  all resources as address, rc {
+    (rc.change.after.tags else {}) contains "Name" else error(
+      "Resource '" + address + "' (" + rc.type + ") is missing required 'Name' tag",
+    )
+  }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rule 2: Name tag must follow <env>-<type>-<name> pattern
+# ─────────────────────────────────────────────────────────────────────────────
+
+validate_name_format = rule {
+  all resources as address, rc {
+    # Only validate if tags exist and contain Name
+    rc.change.after.tags is null or
+    not ((rc.change.after.tags else {}) contains "Name") or
+    rc.change.after.tags["Name"] matches name_pattern else error(
+      "Resource '" + address + "' has invalid Name tag '" + 
+      string(rc.change.after.tags["Name"]) +
+      "'. Must match pattern: <env>-<type>-<name> (e.g. dev-vm-webserver)",
+    )
+  }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rule 3: Environment tag must be an allowed value
+# ─────────────────────────────────────────────────────────────────────────────
+
+validate_environment_tag = rule {
+  all resources as address, rc {
+    # Only validate if tags exist and contain Environment
+    rc.change.after.tags is null or
+    not ((rc.change.after.tags else {}) contains "Environment") or
+    rc.change.after.tags["Environment"] in allowed_environments else error(
+      "Resource '" + address + "' has invalid Environment tag '" +
+      string(rc.change.after.tags["Environment"]) + "'. Must be one of: " +
+      strings.join(allowed_environments, ", "),
+    )
+  }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main rule — policy passes if all rules pass
+# ─────────────────────────────────────────────────────────────────────────────
+
+main = rule {
+  require_name_tag and
+  validate_name_format and
+  validate_environment_tag
+}

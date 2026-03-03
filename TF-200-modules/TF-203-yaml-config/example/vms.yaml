@@ -1,0 +1,33 @@
+# VM definitions for TF-203 YAML-driven configuration example
+# This file is read by main.tf using yamldecode(file("vms.yaml"))
+# Edit this file to add/remove/modify VMs without changing Terraform code.
+
+virtual_machines:
+  - name: web-server
+    memory_mb: 1024
+    vcpu_count: 1
+    disk_size_bytes: 10737418240  # 10 GB
+    network_cidr: "10.70.1.0/24"
+    packages:
+      - nginx
+      - curl
+
+  - name: db-server
+    memory_mb: 2048
+    vcpu_count: 2
+    disk_size_bytes: 21474836480  # 20 GB
+    network_cidr: "10.70.2.0/24"
+    packages:
+      - postgresql
+      - curl
+
+  - name: cache-server
+    memory_mb: 512
+    vcpu_count: 1
+    disk_size_bytes: 5368709120   # 5 GB
+    network_cidr: "10.70.3.0/24"
+    packages:
+      - redis
+      - curl
+
+# Made with Bob

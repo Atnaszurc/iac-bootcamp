@@ -1,0 +1,35 @@
+{
+  "mock": {
+    "tfplan/v2": {
+      "resource_changes": {
+        "libvirt_domain.large": {
+          "address": "libvirt_domain.large",
+          "type": "libvirt_domain",
+          "mode": "managed",
+          "change": {
+            "actions": ["create"],
+            "before": null,
+            "after": {
+              "name": "large-server",
+              "memory": 16384,
+              "vcpu": 8,
+              "autostart": false
+            }
+          }
+        }
+      }
+    },
+    "tfrun": {
+      "workspace": {
+        "name": "development",
+        "id": "ws-abc123"
+      },
+      "organization": {
+        "name": "my-organization"
+      }
+    }
+  },
+  "test": {
+    "main": false
+  }
+}

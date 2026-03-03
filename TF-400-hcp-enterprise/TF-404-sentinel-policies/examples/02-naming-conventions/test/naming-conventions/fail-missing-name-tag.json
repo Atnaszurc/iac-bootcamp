@@ -1,0 +1,29 @@
+{
+  "mock": {
+    "tfplan/v2": {
+      "resource_changes": {
+        "local_file.no_name": {
+          "address": "local_file.no_name",
+          "type": "local_file",
+          "mode": "managed",
+          "change": {
+            "actions": ["create"],
+            "before": null,
+            "after": {
+              "content": "test content",
+              "filename": "test.txt",
+              "tags": {
+                "Environment": "dev",
+                "ManagedBy": "terraform"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "test": {
+    "main": false,
+    "require_name_tag": false
+  }
+}

@@ -1,0 +1,63 @@
+# Sentinel Policy: restrict-vm-memory
+#
+# Purpose: Prevent VMs from being created with excessive memory in non-production workspaces.
+#          Production workspaces are exempt from this restriction.
+#
+# Enforcement: soft-mandatory (workspace admins can override if needed)
+#
+# Applies to: libvirt_domain resources (local VM training environment)
+#
+# Sentinel version: >= 0.18
+
+import "tfplan/v2" as tfplan
+import "tfrun"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Constants
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Maximum memory in MB for non-production VMs (4 GB)
+max_memory_mb = 4096
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Workspace detection
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Check if this is a production workspace (by name convention)
+is_production = rule {
+  tfrun.workspace.name contains "production" or
+  tfrun.workspace.name contains "prod"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Resource filtering
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Get all libvirt_domain resources being created or updated
+vms = filter tfplan.resource_changes as _, rc {
+  rc.type is "libvirt_domain" and
+  rc.mode is "managed" and
+  (rc.change.actions contains "create" or
+   rc.change.actions contains "update")
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rules
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Rule: non-production VMs must not exceed max_memory_mb
+memory_within_limit = rule when not is_production {
+  all vms as address, vm {
+    int(vm.change.after.memory) <= max_memory_mb else error(
+      "VM '" + address + "' requests " + string(vm.change.after.memory) +
+      " MB memory, but non-production VMs are limited to " +
+      string(max_memory_mb) + " MB. Use a production workspace for larger VMs.",
+    )
+  }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main rule — policy passes if all rules pass
+# ─────────────────────────────────────────────────────────────────────────────
+
+main = rule { memory_within_limit }

@@ -1,0 +1,31 @@
+{
+  "mock": {
+    "tfplan/v2": {
+      "resource_changes": {
+        "local_file.insecure": {
+          "address": "local_file.insecure",
+          "type": "local_file",
+          "mode": "managed",
+          "change": {
+            "actions": ["create"],
+            "before": null,
+            "after": {
+              "content": "test content",
+              "filename": "test.txt",
+              "file_permission": "0777",
+              "tags": {
+                "Name": "dev-file-config",
+                "Environment": "dev",
+                "ManagedBy": "terraform"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "test": {
+    "main": false,
+    "no_world_writable_permissions": false
+  }
+}
