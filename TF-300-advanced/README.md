@@ -141,31 +141,37 @@ Learn to write automated tests for Terraform modules using the native test frame
 
 ---
 
-### TF-304: Policy as Code
+### TF-304: Policy as Code - OPA/Rego
 **Duration**: 1 hour
-**Directory**: `TF-304-policy-code/` **[PLANNED]**
+**Directory**: `TF-304-policy-code/`
 
 Implement policy as code using Open Policy Agent (OPA) and Rego to enforce organizational standards and compliance requirements.
 
-**Topics** (Planned):
+**Topics**:
 - Introduction to Policy as Code
 - Open Policy Agent (OPA) basics
 - Rego language fundamentals
-- Writing Terraform policies
-- Policy testing
-- Sentinel overview (Terraform Cloud/Enterprise)
+- Writing Terraform policies with `tfplan` input
+- Policy testing with OPA test framework
+- Sentinel overview (see TF-404 for Sentinel)
 - Policy enforcement strategies
 - Compliance automation
 
-**Hands-On** (Planned):
-- Write OPA policies for Terraform
-- Test policies with sample configurations
-- Enforce naming conventions
-- Validate resource configurations
+**Hands-On**:
+- Write OPA policies for Terraform plan validation
+- Test policies with OPA test framework
+- Enforce naming conventions (Name tag format, Environment tag validation)
+- Validate security configurations (file permissions, required tags)
 - Implement compliance checks
-- Integrate policies into workflows
+- Run policies in CI/CD pipelines
 
-**Status**: 🚧 Content in development
+**Key Skills**:
+- OPA/Rego policy development
+- Terraform plan analysis
+- Policy testing strategies
+- CI/CD integration patterns
+
+**Status**: ✅ Complete with 2 policies and 15 passing tests
 
 ---
 
@@ -311,11 +317,11 @@ Week 1: Validation Fundamentals
 ├── Day 1-2: TF-301 (Input Validation & Advanced Functions)
 └── Day 3-4: TF-302 (Pre/Post Conditions & Check Blocks)
 
-Week 2: State Management & Functions
-├── Day 1-2: TF-305 (Workspaces & Remote State)
-├── Day 3-4: TF-306 (Terraform Functions Deep Dive)
-├── Day 5:   TF-303 (Terraform Test Framework) [PLANNED]
-└── Day 6:   TF-304 (Policy as Code) [PLANNED]
+Week 2: Testing, Policy & State Management
+├── Day 1-2: TF-303 (Terraform Test Framework) [PLANNED]
+├── Day 3:   TF-304 (Policy as Code - OPA/Rego)
+├── Day 4-5: TF-305 (Workspaces & Remote State)
+└── Day 6:   TF-306 (Terraform Functions Deep Dive)
 
 Week 3: New Terraform 1.14 Features
 └── Day 1:   TF-307 (List Resources, terraform query & Actions)
@@ -326,14 +332,14 @@ Week 3: New Terraform 1.14 Features
 - ✅ **TF-301**: Complete and ready
 - ✅ **TF-302**: Complete and ready
 - 🚧 **TF-303**: Content in development
-- 🚧 **TF-304**: Content in development
+- ✅ **TF-304**: Complete and ready (OPA/Rego with 15 passing tests)
 - ✅ **TF-305**: Complete and ready
 - ✅ **TF-306**: Complete and ready
 - ✅ **TF-307**: Complete and ready (Terraform 1.14+)
 
 ### Time Commitment
 
-- **Currently Available**: 7.5 hours (TF-301 + TF-302 + TF-305 + TF-306 + TF-307)
+- **Currently Available**: 8.5 hours (TF-301 + TF-302 + TF-304 + TF-305 + TF-306 + TF-307)
 - **Full Course (when complete)**: 9.5 hours
 - **With Practice**: 12-14 hours (recommended)
 - **Full Mastery**: 18-20 hours (includes experimentation)
@@ -460,13 +466,13 @@ TF-300-advanced/
 - Run tests in CI/CD pipelines
 - Mock external dependencies
 
-#### After TF-304 (When Available), you will:
-- Write policies in Rego
-- Enforce organizational standards
-- Implement compliance checks
-- Test policies effectively
-- Integrate policies into workflows
-- Understand Sentinel (Terraform Cloud)
+#### After TF-304, you will:
+- Write policies in Rego language
+- Enforce organizational standards with OPA
+- Implement compliance checks for Terraform plans
+- Test policies effectively with OPA test framework
+- Integrate policies into CI/CD workflows
+- Understand the difference between OPA and Sentinel
 
 ---
 
@@ -611,11 +617,11 @@ For detailed troubleshooting, see:
 
 ## 📊 Course Statistics
 
-- **Total Modules**: 6 (4 complete, 2 planned)
-- **Available Content**: 4 modules (TF-301, TF-302, TF-305, TF-306)
-- **Hands-On Labs**: 30+ (current), 45+ (when complete)
-- **Code Examples**: 60+ (current), 90+ (when complete)
-- **Estimated Completion**: 6 hours (current), 8-18 hours (when complete)
+- **Total Modules**: 7 (6 complete, 1 planned)
+- **Available Content**: 6 modules (TF-301, TF-302, TF-304, TF-305, TF-306, TF-307)
+- **Hands-On Labs**: 35+ (current), 45+ (when complete)
+- **Code Examples**: 70+ (current), 90+ (when complete)
+- **Estimated Completion**: 8.5 hours (current), 9.5 hours (when complete)
 
 ---
 
@@ -656,17 +662,18 @@ Will cover:
 - Integration testing
 - CI/CD integration
 
-### TF-304: Policy as Code
+### TF-303: Terraform Test Framework
 
-**Status**: In Development  
+**Status**: In Development
 **Expected**: Q2 2026
 
 Will cover:
-- Open Policy Agent (OPA)
-- Rego language
-- Policy testing
-- Sentinel overview
-- Compliance automation
+- Native Terraform testing (1.6+)
+- Test file structure (.tftest.hcl)
+- Assertions and expectations
+- Integration testing
+- Mocking with .tfmock.hcl
+- CI/CD integration
 
 **Want to contribute?** Help us develop this content! See [CONTRIBUTING.md](../CONTRIBUTING.md)
 
