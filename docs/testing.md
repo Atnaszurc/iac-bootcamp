@@ -20,7 +20,9 @@ or other external services are documented but not included in the automated suit
 ### Prerequisites
 
 - **Terraform >= 1.6.0** (test framework was introduced in 1.6)
-- **WSL2 or Linux** for the bash runner, or **Windows PowerShell** for the PS1 runner
+- **Linux, macOS, or WSL2** (Libvirt provider requires Unix-like environment)
+
+> **Windows Users**: You must use WSL2. The Libvirt provider does not work on native Windows.
 
 ```bash
 # Verify your Terraform version
@@ -28,19 +30,12 @@ terraform version
 # Should show: Terraform v1.6.0 or higher
 ```
 
-### Run All Tests (Linux / WSL2)
+### Run All Tests
 
 ```bash
-# From the hashi-training/ directory
+# From the hashi-training/ directory (in WSL2 if on Windows)
 chmod +x scripts/run-tests.sh
 ./scripts/run-tests.sh
-```
-
-### Run All Tests (Windows PowerShell)
-
-```powershell
-# From the hashi-training\ directory
-.\scripts\run-tests.ps1
 ```
 
 ### Run a Single Example Manually
@@ -53,31 +48,23 @@ terraform test
 
 ---
 
-## Test Runner Scripts
+## Test Runner Script
 
-Two equivalent scripts are provided:
+The test runner script works on Linux, macOS, and WSL2:
 
 | Script | Platform | Usage |
 |--------|----------|-------|
 | `scripts/run-tests.sh` | Linux / WSL2 / macOS | `./scripts/run-tests.sh [FILTER]` |
-| `scripts/run-tests.ps1` | Windows PowerShell | `.\scripts\run-tests.ps1 [-Filter <string>]` |
 
 ### Filtering Examples
 
 Run only a subset of examples by passing a filter string:
 
 ```bash
-# Bash
 ./scripts/run-tests.sh TF-100        # All TF-100 examples (7 tests)
 ./scripts/run-tests.sh TF-306        # All TF-306 function examples (4 tests)
 ./scripts/run-tests.sh json-config   # Only the json-config example
 ./scripts/run-tests.sh --list        # List all testable examples
-
-# PowerShell
-.\scripts\run-tests.ps1 TF-100
-.\scripts\run-tests.ps1 TF-306
-.\scripts\run-tests.ps1 json-config
-.\scripts\run-tests.ps1 -List
 ```
 
 ---

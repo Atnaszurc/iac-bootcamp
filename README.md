@@ -66,14 +66,16 @@ TF-300: Testing, Validation & Advanced Features (8 hours)
 │   └── [+] S3 native state locking (1.11+)
 ├── TF-306: Terraform Functions Deep Dive (1.5h)
 │   └── [+] templatestring, ephemeralasnull, element() negative indices (1.9-1.10)
-└── TF-307: List Resources, terraform query & Actions (1h) [NEW — 1.14]
+└── TF-307: List Resources, terraform query & Actions (1h) [NEW — 1.14] *
+    └── [*] Conceptual/design-focused (requires provider support)
 
 TF-400: HCP Terraform & Enterprise Features (6 hours)
 ├── TF-401: HCP Terraform Fundamentals (1.5h)
 ├── TF-402: Remote Runs & VCS Integration (1.5h)
 ├── TF-403: Security & Access Control (1h)
 ├── TF-404: Sentinel Policy as Code (1h)
-└── TF-405: Terraform Stacks (1h) [NEW — 1.13]
+└── TF-405: Terraform Stacks (1h) [NEW — 1.13] *
+    └── [*] Conceptual/design-focused (requires HCP Terraform)
 
 PKR-100: Packer Fundamentals (4 hours)
 ├── PKR-101: Introduction to Image Building (1h)
@@ -98,10 +100,12 @@ PKR-100: Packer Fundamentals (4 hours)
 
 ### Prerequisites
 
-- **System**: Linux, macOS, or Windows 10/11 with WSL2
+- **System**: Linux, macOS, or **Windows 10/11 with WSL2** (required for Libvirt)
 - **RAM**: 8 GB minimum (16 GB recommended)
 - **Disk**: 50 GB free space
 - **CPU**: Virtualization support (Intel VT-x or AMD-V)
+
+> **Windows Users**: Libvirt requires WSL2 (Windows Subsystem for Linux). Native Windows is not supported.
 
 ### Installation (5 Steps)
 
@@ -430,8 +434,6 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) file for
 ### Planned
 - [ ] GCP cloud module
 - [ ] Kubernetes integration examples
-- [ ] Video tutorials
-- [ ] Interactive labs
 
 ---
 
