@@ -1,0 +1,13 @@
+# Example terraform.tfvars file
+# Copy this to terraform.tfvars and update with your values
+
+project_id  = "my-gcp-project-id"
+region      = "us-central1"
+zone        = "us-central1-a"
+environment = "dev"
+
+labels = {
+  managed_by = "terraform"
+  course     = "gcp-201"
+  owner      = "your-name"
+}

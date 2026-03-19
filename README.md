@@ -92,6 +92,7 @@ PKR-100: Packer Fundamentals (4 hours)
 
 - **AWS-200**: Apply concepts to AWS (EC2, VPC, S3, RDS)
 - **AZ-200**: Apply concepts to Azure (VMs, VNets, Storage)
+- **GCP-200**: Apply concepts to GCP (Compute Engine, VPC, Cloud Storage, Cloud SQL)
 - **MC-300**: Advanced multi-cloud patterns
 
 ---
@@ -217,14 +218,28 @@ Week 7-8: AZ-200 Module
 
 ---
 
-### Path 4: Core + Multi-Cloud
+### Path 4: Core + GCP
+**Best for**: Google Cloud careers, data/ML focus
+
+```
+Week 1-6: Core Training (TF-100, TF-200, TF-300)
+Week 7-8: GCP-200 Module
+└── Production-ready GCP Terraform skills
+```
+
+**Outcome**: Google Cloud Engineer ready
+
+---
+
+### Path 5: Core + Multi-Cloud
 **Best for**: Advanced learners, multi-cloud environments
 
 ```
 Week 1-6: Core Training
 Week 7-8: AWS-200 Module
 Week 9-10: AZ-200 Module
-Week 11+: MC-300 Multi-Cloud Patterns
+Week 11-12: GCP-200 Module
+Week 13+: MC-300 Multi-Cloud Patterns
 └── Multi-cloud expertise
 ```
 
@@ -286,6 +301,7 @@ hashi-training/
     ├── README.md                     # Cloud modules overview
     ├── AWS-200-terraform/            # AWS module
     ├── AZ-200-terraform/             # Azure module
+    ├── GCP-200-terraform/            # GCP module
     └── MC-300-multi-cloud/           # Multi-cloud patterns
 ```
 
@@ -432,8 +448,8 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) file for
 - ✅ CLI documentation updates: new commands 1.9–1.14 (TF-104)
 
 ### Planned
-- [ ] GCP cloud module
 - [ ] Kubernetes integration examples
+- [ ] Advanced GCP examples and labs
 
 ---
 

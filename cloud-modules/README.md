@@ -50,6 +50,23 @@ Apply your Terraform skills to Microsoft Azure — the leading enterprise cloud 
 
 ---
 
+### GCP-200: Google Cloud Platform with Terraform
+**Duration**: 6 hours | **Directory**: `GCP-200-terraform/`
+
+Apply your Terraform skills to Google Cloud Platform — Google's innovative cloud platform.
+
+| Course | Topic | Duration |
+|--------|-------|----------|
+| GCP-201 | Setup & Authentication | 1h |
+| GCP-202 | Compute & Networking (VPC, Compute Engine, Cloud NAT) | 2h |
+| GCP-203 | Security & Storage (IAM, Cloud Storage, Cloud KMS) | 2h |
+| GCP-204 | Advanced Patterns (Load Balancers, MIGs, Cloud SQL) | 1h |
+
+**Prerequisites**: GCP account (free tier with $300 credit)
+**[→ Start GCP-200](GCP-200-terraform/README.md)**
+
+---
+
 ### MC-300: Multi-Cloud Architecture
 **Duration**: 4 hours | **Directory**: `MC-300-multi-cloud/`
 
@@ -90,10 +107,17 @@ Total: ~27 hours | Cost: Azure free tier
 ```
 Best for: Enterprise environments, Microsoft shops.
 
-### Path D: Multi-Cloud Expert
+### Path D: Core + GCP
 ```
-TF-100 → TF-200 → TF-300 → AWS-200 → AZ-200 → MC-300
-Total: ~37 hours | Cost: Both free tiers
+TF-100 → TF-200 → TF-300 → GCP-200
+Total: ~27 hours | Cost: GCP free tier ($300 credit)
+```
+Best for: Google Cloud careers, innovative cloud platform.
+
+### Path E: Multi-Cloud Expert
+```
+TF-100 → TF-200 → TF-300 → AWS-200 → AZ-200 → GCP-200 → MC-300
+Total: ~43 hours | Cost: All free tiers
 ```
 Best for: Cloud architects, multi-cloud environments.
 
@@ -101,15 +125,18 @@ Best for: Cloud architects, multi-cloud environments.
 
 ## 💡 Which Cloud Should I Choose?
 
-| Factor | AWS | Azure |
-|--------|-----|-------|
-| Market share | #1 (32%) | #2 (22%) |
-| Job market | Largest | Strong enterprise |
-| Free tier | 12 months + always free | 12 months + always free |
-| Best for | Startups, web apps | Enterprise, Microsoft shops |
-| Certifications | AWS SAA, SAP | AZ-104, AZ-305 |
+| Factor | AWS | Azure | GCP |
+|--------|-----|-------|-----|
+| Market share | #1 (32%) | #2 (22%) | #3 (11%) |
+| Job market | Largest | Strong enterprise | Growing rapidly |
+| Free tier | 12 months + always free | 12 months + always free | $300 credit + always free |
+| Best for | Startups, web apps | Enterprise, Microsoft shops | Data/ML, Kubernetes, Innovation |
+| Certifications | AWS SAA, SAP | AZ-104, AZ-305 | Associate/Professional Cloud |
+| Strengths | Mature, comprehensive | Enterprise integration | Innovation, BigQuery, GKE |
 
 **Not sure?** Start with AWS — it has the largest job market and most community resources.
+**Data/ML focus?** Consider GCP — excellent for data analytics and machine learning.
+**Enterprise?** Azure integrates well with Microsoft ecosystems.
 
 ---
 
@@ -160,9 +187,10 @@ cat README.md
 |--------|--------|---------|
 | AWS-200 | ✅ Ready | 4 courses, working examples |
 | AZ-200 | ✅ Ready | 4 courses, working examples |
+| GCP-200 | ✅ Ready | 4 courses, structure complete |
 | MC-300 | 🚧 In Development | Structure ready, content planned |
 
 ---
 
 *Part of the [hashi-training](../README.md) Zero-to-Hero IaC program*  
-*Last Updated: 2026-02-28*
+*Last Updated: 2026-03-18*

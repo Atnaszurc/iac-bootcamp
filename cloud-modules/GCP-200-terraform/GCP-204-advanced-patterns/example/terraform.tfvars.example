@@ -1,0 +1,76 @@
+# ============================================================================
+# GCP-204: Advanced Patterns - Example Configuration
+# ============================================================================
+# Copy this file to terraform.tfvars and update with your values
+# cp terraform.tfvars.example terraform.tfvars
+
+# ============================================================================
+# Project Configuration
+# ============================================================================
+
+project_id  = "your-gcp-project-id"
+region      = "us-central1"
+zone        = "us-central1-a"
+environment = "dev"
+
+# ============================================================================
+# Network Configuration
+# ============================================================================
+
+vpc_name    = "gcp-204-vpc"
+subnet_cidr = "10.0.0.0/24"
+
+# ============================================================================
+# Managed Instance Group Configuration
+# ============================================================================
+
+instance_template_machine_type = "e2-small"
+instance_template_disk_size    = 10
+instance_template_image        = "debian-cloud/debian-12"
+
+mig_target_size = 2
+
+# ============================================================================
+# Autoscaling Configuration
+# ============================================================================
+
+autoscaler_min_replicas    = 2
+autoscaler_max_replicas    = 5
+autoscaler_cpu_target      = 0.6
+autoscaler_cooldown_period = 60
+
+# ============================================================================
+# Load Balancer Health Check Configuration
+# ============================================================================
+
+health_check_port               = 80
+health_check_interval           = 10
+health_check_timeout            = 5
+health_check_healthy_threshold  = 2
+health_check_unhealthy_threshold = 3
+
+# ============================================================================
+# Cloud SQL Configuration
+# ============================================================================
+
+enable_cloud_sql           = true
+database_version           = "POSTGRES_15"
+database_tier              = "db-f1-micro"
+database_disk_size         = 10
+database_disk_type         = "PD_SSD"
+database_backup_enabled    = true
+database_backup_start_time = "03:00"
+database_ha_enabled        = false
+database_name              = "appdb"
+database_user              = "appuser"
+
+# ============================================================================
+# Labels
+# ============================================================================
+
+labels = {
+  course      = "gcp-204"
+  managed_by  = "terraform"
+  team        = "training"
+  cost_center = "education"
+}

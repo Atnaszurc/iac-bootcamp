@@ -1,0 +1,29 @@
+# Example terraform.tfvars file for GCP-202
+# Copy this to terraform.tfvars and update with your values
+
+project_id  = "my-gcp-project-id"
+region      = "us-central1"
+zone        = "us-central1-a"
+environment = "dev"
+
+# Network configuration
+vpc_name             = "custom-vpc"
+public_subnet_cidr   = "10.0.1.0/24"
+private_subnet_cidr  = "10.0.2.0/24"
+
+# Instance configuration
+instance_count = 2
+machine_type   = "e2-medium"
+enable_nat     = true
+
+# SSH configuration
+ssh_user             = "terraform"
+ssh_public_key_file  = "~/.ssh/id_rsa.pub"
+
+# Labels
+labels = {
+  managed_by = "terraform"
+  course     = "gcp-202"
+  owner      = "your-name"
+  team       = "training"
+}
