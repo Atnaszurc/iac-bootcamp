@@ -101,7 +101,7 @@ PKR-100: Packer Fundamentals (4 hours)
 
 ### Prerequisites
 
-- **System**: Linux, macOS, or **Windows 10/11 with WSL2** (required for Libvirt)
+- **System**: Linux or macOS
 - **RAM**: 8 GB minimum (16 GB recommended)
 - **Disk**: 50 GB free space
 - **CPU**: Virtualization support (Intel VT-x or AMD-V)
