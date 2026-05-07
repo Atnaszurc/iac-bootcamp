@@ -36,13 +36,14 @@ By the end of this course, you will be able to:
 This course is organized into **5 comprehensive sections** covering operational aspects of Terraform:
 
 ### 1. CLI Commands 🖥️
-**Directory**: [`1-cli/`](./1-cli/)  
+**Directory**: [`1-cli/`](./1-cli/)
 **Duration**: 15 minutes
 
 **What You'll Learn**:
 - Complete Terraform CLI workflow
 - Essential commands (init, plan, apply, destroy)
 - Code formatting and validation
+- **Backend validation with terraform validate** (Terraform 1.15+)
 - Output management
 - Advanced CLI flags and options
 - Command chaining and automation
@@ -50,7 +51,7 @@ This course is organized into **5 comprehensive sections** covering operational 
 **Key Commands Covered**:
 - `terraform init` - Initialize working directory
 - `terraform fmt` - Format code consistently
-- `terraform validate` - Validate configuration syntax
+- `terraform validate` - Validate configuration syntax **and backend blocks** (1.15+)
 - `terraform plan` - Preview infrastructure changes
 - `terraform apply` - Apply changes to infrastructure
 - `terraform destroy` - Destroy infrastructure
@@ -61,6 +62,8 @@ This course is organized into **5 comprehensive sections** covering operational 
 - `terraform stacks` - Manage Terraform Stacks (1.13+, HCP only)
 
 **Hands-On**: Practice the complete Terraform workflow with real examples
+
+**New in Terraform 1.15**: The `terraform validate` command now checks backend blocks to ensure the backend type exists, all required attributes are present, and the backend's validation logic passes. See section [`1-cli/6-backend-validation/`](./1-cli/6-backend-validation/) for details.
 
 ---
 

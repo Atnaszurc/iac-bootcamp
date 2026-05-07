@@ -257,3 +257,32 @@ example/
 
 - [Terraform Docs: Ephemeral Values](https://developer.hashicorp.com/terraform/language/values/variables#ephemeral-values)
 - [Terraform 1.10 Release Notes](https://github.com/hashicorp/terraform/releases/tag/v1.10.0)
+
+## Testing Considerations
+
+### Using command = apply in Tests
+
+This module's tests use `command = apply` instead of `command = plan` because the infrastructure resources create values that are unknown until after the apply phase.
+
+**Why apply is required**:
+- Resource IDs are generated during creation
+- Computed attributes are only known after apply
+- Output values depend on created resources
+
+**When to use plan vs apply**:
+- **Use `command = plan`**: When testing static values, data sources, or validation logic
+- **Use `command = apply`**: When testing resource creation, outputs, or computed values
+
+`hcl
+# Example test structure
+run "test_infrastructure" {
+  command = apply  # Required for resource testing
+  
+  assert {
+    condition     = output.resource_id != ""
+    error_message = "Resource ID should be generated"
+  }
+}
+`
+
+**Note**: Using `command = apply` means tests will create actual infrastructure, so ensure proper cleanup in test teardown.

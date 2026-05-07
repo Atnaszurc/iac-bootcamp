@@ -280,4 +280,107 @@ terraform {
 }
 ```
 
+
+---
+
+### `terraform validate` — Backend Validation (1.15)
+
+Starting in **Terraform 1.15**, the `terraform validate` command now checks the `backend` block to ensure:
+- The backend type exists
+- All required attributes are present
+- The backend's own validation logic passes
+
+This catches backend configuration errors **before** running `terraform init`, which is especially useful in CI/CD pipelines.
+
+#### Example: Valid Backend
+
+```hcl
+terraform {
+  backend "local" {
+    path = "terraform.tfstate"
+  }
+}
+```
+
+```bash
+terraform validate
+# Success! The configuration is valid.
+```
+
+#### Example: Invalid Backend Type
+
+```hcl
+terraform {
+  backend "nonexistent" {
+    path = "terraform.tfstate"
+  }
+}
+```
+
+```bash
+terraform validate
+# Error: Invalid backend type
+#   on main.tf line 2, in terraform:
+#    2:   backend "nonexistent" {
+# Backend type "nonexistent" is not supported.
+```
+
+#### Example: Missing Required Attribute
+
+```hcl
+terraform {
+  backend "s3" {
+    key    = "terraform.tfstate"
+    region = "us-east-1"
+    # Missing required "bucket" attribute
+  }
+}
+```
+
+```bash
+terraform validate
+# Error: Missing required argument
+#   on main.tf line 2, in terraform:
+#    2:   backend "s3" {
+# The argument "bucket" is required, but no definition was found.
+```
+
+#### Benefits
+
+1. **Early Error Detection**: Catch backend configuration errors before `terraform init`
+2. **CI/CD Integration**: Validate backend configuration in pipelines without initializing
+3. **Faster Feedback**: No need to wait for provider downloads to detect backend issues
+4. **Better Error Messages**: Clear indication of what's wrong with the backend configuration
+
+> **Deep dive**: See [`6-backend-validation/`](./6-backend-validation/) for comprehensive examples and hands-on exercises with backend validation.
+
 > **Deep dive**: See **TF-305 Section 2** for a full walkthrough of S3 backend configuration and the migration from DynamoDB locking to native S3 locking.
+
+## Testing Considerations
+
+### Using command = apply in Tests
+
+This module's tests use `command = apply` instead of `command = plan` because the infrastructure resources create values that are unknown until after the apply phase.
+
+**Why apply is required**:
+- Resource IDs are generated during creation
+- Computed attributes are only known after apply
+- Output values depend on created resources
+
+**When to use plan vs apply**:
+- **Use `command = plan`**: When testing static values, data sources, or validation logic
+- **Use `command = apply`**: When testing resource creation, outputs, or computed values
+
+`hcl
+# Example test structure
+run "test_infrastructure" {
+  command = apply  # Required for resource testing
+  
+  assert {
+    condition     = output.resource_id != ""
+    error_message = "Resource ID should be generated"
+  }
+}
+`
+
+**Note**: Using `command = apply` means tests will create actual infrastructure, so ensure proper cleanup in test teardown.

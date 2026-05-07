@@ -23,8 +23,9 @@
 9. [Hands-On Walkthrough](#hands-on-walkthrough)
 10. [When to Use Stacks](#when-to-use-stacks)
 11. [Limitations and Considerations](#limitations-and-considerations)
-12. [Checkpoint Quiz](#checkpoint-quiz)
-13. [Additional Resources](#additional-resources)
+12. [🆕 New in Terraform 1.15: Stacks Improvements](#-new-in-terraform-115-stacks-improvements)
+13. [Checkpoint Quiz](#checkpoint-quiz)
+14. [Additional Resources](#additional-resources)
 
 ---
 
@@ -581,6 +582,347 @@ deployment "prod-eu" {
 6. **Learning curve**: Stacks add significant complexity. Only adopt them when the coordination benefits outweigh the complexity cost
 
 7. **Pricing**: Stacks may require a specific HCP Terraform tier — verify with HashiCorp's current pricing
+
+---
+
+## 🆕 New in Terraform 1.15: Stacks Improvements
+
+Terraform 1.15 introduced several important improvements to Terraform Stacks that enhance the user experience and reliability:
+
+### 1. Progress Events for Failed Plans
+
+**What Changed**: Stacks now send progress events even when a plan fails, providing better UI integration and visibility into what went wrong.
+
+**Why It Matters**: Previously, if a Stack plan failed, you might not get detailed progress information about which components succeeded before the failure. Now, HCP Terraform's UI can show you exactly where the failure occurred in the component dependency chain.
+
+**Example Scenario**:
+
+```hcl
+# stack.tfstack.hcl
+component "networking" {
+  source = "./networking"
+  inputs = {
+    vpc_cidr = var.vpc_cidr
+  }
+}
+
+component "database" {
+  source = "./database"
+  inputs = {
+    vpc_id = component.networking.vpc_id
+    # This might fail due to invalid configuration
+    instance_class = "invalid.instance.type"
+  }
+}
+
+component "compute" {
+  source = "./compute"
+  inputs = {
+    vpc_id      = component.networking.vpc_id
+    db_endpoint = component.database.endpoint
+  }
+}
+```
+
+**Before Terraform 1.15**:
+- Plan fails on `database` component
+- Limited visibility into which components completed successfully
+- Harder to debug in the HCP Terraform UI
+
+**After Terraform 1.15**:
+- Plan fails on `database` component
+- Progress events show that `networking` completed successfully
+- Clear indication that `database` failed and `compute` was not attempted
+- Better UI integration showing the exact failure point
+
+**Best Practice**: When debugging Stack failures, check the HCP Terraform UI for the detailed progress events to understand the component execution order and failure point.
+
+---
+
+### 2. No-Op Plan/Apply Reporting
+
+**What Changed**: Component instances now properly report when they have no changes (no-op operations), improving UI consistency especially with convergence destroy plans.
+
+**Why It Matters**: This solves a UI inconsistency where components with no changes weren't clearly indicated, making it harder to understand the overall Stack state.
+
+**Example Scenario**:
+
+```hcl
+# deployments.tfdeploy.hcl
+deployment "dev" {
+  inputs = {
+    region      = "us-east-1"
+    environment = "dev"
+  }
+}
+
+deployment "staging" {
+  inputs = {
+    region      = "us-east-1"
+    environment = "staging"
+  }
+}
+```
+
+**Scenario**: You update only the `dev` deployment's configuration:
+
+```bash
+# Plan the Stack
+terraform stacks plan
+```
+
+**Before Terraform 1.15**:
+- Components in `staging` deployment might not clearly show "no changes"
+- UI could be confusing about which deployments/components are affected
+- Convergence destroy plans had inconsistent reporting
+
+**After Terraform 1.15**:
+- Components with no changes explicitly report as "no-op"
+- Clear distinction between:
+  - Components with changes
+  - Components with no changes (no-op)
+  - Components not yet planned
+- Convergence destroy plans show consistent no-op reporting
+
+**Example Output**:
+```
+Planning Stack...
+
+Deployment: dev
+  Component: networking - 2 to add, 1 to change, 0 to destroy
+  Component: database   - 0 to add, 1 to change, 0 to destroy
+  Component: compute    - 0 to add, 0 to change, 0 to destroy (no-op)
+
+Deployment: staging
+  Component: networking - 0 to add, 0 to change, 0 to destroy (no-op)
+  Component: database   - 0 to add, 0 to change, 0 to destroy (no-op)
+  Component: compute    - 0 to add, 0 to change, 0 to destroy (no-op)
+```
+
+**Best Practice**: Use the no-op indicators to quickly identify which deployments and components are affected by your changes, making it easier to review large Stack plans.
+
+---
+
+### 3. Input Variable Validation for Stacks
+
+**What Changed**: Terraform 1.15 adds support for input variable validation in Stack configurations, bringing the same validation capabilities available in regular Terraform to Stacks.
+
+**Why It Matters**: You can now enforce constraints on Stack-level variables, catching configuration errors early before deployment.
+
+**Syntax**:
+
+```hcl
+# variables.tfstack.hcl
+
+variable "environment" {
+  type        = string
+  description = "Deployment environment"
+
+  validation {
+    condition     = contains(["dev", "staging", "prod"], var.environment)
+    error_message = "Environment must be dev, staging, or prod."
+  }
+}
+
+variable "region" {
+  type        = string
+  description = "AWS region for deployment"
+
+  validation {
+    condition     = can(regex("^(us|eu|ap)-(east|west|central|south|north|northeast|southeast)-[1-9]$", var.region))
+    error_message = "Region must be a valid AWS region format (e.g., us-east-1, eu-west-2)."
+  }
+}
+
+variable "instance_count" {
+  type        = number
+  description = "Number of instances to deploy"
+  default     = 2
+
+  validation {
+    condition     = var.instance_count >= 1 && var.instance_count <= 10
+    error_message = "Instance count must be between 1 and 10."
+  }
+}
+
+variable "vpc_cidr" {
+  type        = string
+  description = "VPC CIDR block"
+
+  validation {
+    condition     = can(cidrhost(var.vpc_cidr, 0))
+    error_message = "VPC CIDR must be a valid IPv4 CIDR block."
+  }
+}
+```
+
+**Using Validated Variables in Deployments**:
+
+```hcl
+# deployments.tfdeploy.hcl
+
+deployment "dev" {
+  inputs = {
+    environment    = "dev"           # ✅ Valid
+    region         = "us-east-1"     # ✅ Valid
+    instance_count = 2               # ✅ Valid
+    vpc_cidr       = "10.0.0.0/16"   # ✅ Valid
+  }
+}
+
+deployment "invalid-example" {
+  inputs = {
+    environment    = "production"    # ❌ Fails validation - not in allowed list
+    region         = "invalid-region" # ❌ Fails validation - invalid format
+    instance_count = 15              # ❌ Fails validation - exceeds maximum
+    vpc_cidr       = "not-a-cidr"    # ❌ Fails validation - invalid CIDR
+  }
+}
+```
+
+**Validation Error Example**:
+
+```bash
+$ terraform stacks validate
+
+Error: Invalid value for variable
+
+  on deployments.tfdeploy.hcl line 15, in deployment "invalid-example":
+  15:     environment = "production"
+
+Environment must be dev, staging, or prod.
+
+Error: Invalid value for variable
+
+  on deployments.tfdeploy.hcl line 16, in deployment "invalid-example":
+  16:     region = "invalid-region"
+
+Region must be a valid AWS region format (e.g., us-east-1, eu-west-2).
+```
+
+**Advanced Validation Examples**:
+
+```hcl
+# Cross-variable validation
+variable "enable_multi_az" {
+  type    = bool
+  default = false
+}
+
+variable "availability_zones" {
+  type = list(string)
+
+  validation {
+    condition = (
+      !var.enable_multi_az ||
+      length(var.availability_zones) >= 2
+    )
+    error_message = "When enable_multi_az is true, at least 2 availability zones must be specified."
+  }
+}
+
+# Complex validation with multiple conditions
+variable "instance_type" {
+  type = string
+
+  validation {
+    condition = (
+      can(regex("^t[2-3]\\.", var.instance_type)) ||
+      can(regex("^m[5-6]\\.", var.instance_type)) ||
+      can(regex("^c[5-6]\\.", var.instance_type))
+    )
+    error_message = "Instance type must be from t2, t3, m5, m6, c5, or c6 families."
+  }
+}
+
+# Validation with environment-specific rules
+variable "backup_retention_days" {
+  type = number
+
+  validation {
+    condition = (
+      (var.environment == "prod" && var.backup_retention_days >= 30) ||
+      (var.environment != "prod" && var.backup_retention_days >= 7)
+    )
+    error_message = "Production requires 30+ days retention, non-production requires 7+ days."
+  }
+}
+```
+
+**Best Practices for Stack Variable Validation**:
+
+1. **Validate Early**: Add validation rules to catch errors before deployment
+2. **Clear Error Messages**: Provide helpful error messages that explain what's wrong and how to fix it
+3. **Environment-Specific Rules**: Use validation to enforce different requirements for dev vs prod
+4. **Format Validation**: Validate formats (CIDR blocks, regions, etc.) to prevent typos
+5. **Range Validation**: Enforce reasonable limits on numeric values
+6. **Dependency Validation**: Validate that related variables are consistent with each other
+
+**Common Validation Patterns**:
+
+```hcl
+# Enum validation (allowed values)
+validation {
+  condition     = contains(["small", "medium", "large"], var.size)
+  error_message = "Size must be small, medium, or large."
+}
+
+# Regex pattern matching
+validation {
+  condition     = can(regex("^[a-z0-9-]+$", var.name))
+  error_message = "Name must contain only lowercase letters, numbers, and hyphens."
+}
+
+# Numeric range
+validation {
+  condition     = var.port >= 1024 && var.port <= 65535
+  error_message = "Port must be between 1024 and 65535."
+}
+
+# CIDR validation
+validation {
+  condition     = can(cidrhost(var.cidr, 0))
+  error_message = "Must be a valid CIDR block."
+}
+
+# List length validation
+validation {
+  condition     = length(var.tags) <= 50
+  error_message = "Maximum of 50 tags allowed."
+}
+
+# Conditional validation
+validation {
+  condition = (
+    !var.enable_feature ||
+    var.feature_config != null
+  )
+  error_message = "feature_config is required when enable_feature is true."
+}
+```
+
+---
+
+### Summary of Terraform 1.15 Stacks Improvements
+
+| Feature | Benefit | Use Case |
+|---------|---------|----------|
+| **Progress Events on Failure** | Better debugging and UI visibility | Understanding which components succeeded before a failure |
+| **No-Op Reporting** | Clearer plan output and UI consistency | Quickly identifying affected components in large Stacks |
+| **Input Variable Validation** | Early error detection and enforcement | Preventing invalid configurations before deployment |
+
+**Migration Notes**:
+
+- These improvements are **backward compatible** — existing Stacks work without changes
+- Variable validation is **optional** — add it incrementally to existing Stacks
+- Progress events and no-op reporting are **automatic** — no configuration needed
+
+**Recommended Actions**:
+
+1. **Add Variable Validation**: Review your Stack variables and add validation rules for critical inputs
+2. **Update Documentation**: Document the validation rules so deployment authors understand the constraints
+3. **Test Validation**: Create test deployments with invalid values to verify your validation rules work correctly
+4. **Monitor Progress Events**: Use the improved progress events in HCP Terraform UI to debug plan failures more effectively
 
 ---
 

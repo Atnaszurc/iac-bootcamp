@@ -1,0 +1,22 @@
+# This file demonstrates an INVALID backend configuration
+# Rename to .tf to test the validation error
+#
+# Error: Invalid attribute value for S3 backend
+
+terraform {
+  required_version = ">= 1.15.0"
+
+  # Invalid - workspace_key_prefix cannot be empty
+  backend "s3" {
+    bucket               = "my-terraform-state"
+    key                  = "terraform.tfstate"
+    region               = "us-east-1"
+    workspace_key_prefix = ""  # Invalid: cannot be empty string
+  }
+}
+
+# Expected error when running terraform validate:
+# Error: Invalid backend configuration
+#   on 4-invalid-attribute-value.tf line 14, in terraform:
+#   14:     workspace_key_prefix = ""
+# workspace_key_prefix cannot be an empty string

@@ -1,0 +1,21 @@
+# This file demonstrates an INVALID backend configuration
+# Rename to .tf to test the validation error
+#
+# Error: Missing required "bucket" attribute for S3 backend
+
+terraform {
+  required_version = ">= 1.15.0"
+
+  # Invalid - missing required "bucket" attribute
+  backend "s3" {
+    key    = "terraform.tfstate"
+    region = "us-east-1"
+    # Missing: bucket
+  }
+}
+
+# Expected error when running terraform validate:
+# Error: Missing required argument
+#   on 3-missing-required-attribute.tf line 9, in terraform:
+#    9:   backend "s3" {
+# The argument "bucket" is required, but no definition was found.

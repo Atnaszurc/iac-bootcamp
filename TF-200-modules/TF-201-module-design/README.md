@@ -1262,6 +1262,65 @@ module "backup" {
 
 ---
 
+## 🆕 Dynamic Module Sources (Terraform 1.15+)
+
+**New Feature**: Terraform 1.15 introduces the ability to use variables and locals in module `source` and `version` attributes, enabling dynamic module sourcing and version management.
+
+### Overview
+
+Previously, module sources and versions had to be literal strings. Now you can use variables and locals for:
+- Environment-specific module versions
+- Centralized version management
+- Dynamic module selection
+- CI/CD integration
+- Multi-tenant configurations
+
+### Basic Example
+
+```hcl
+variable "module_version" {
+  default = "5.0.0"
+}
+
+module "vpc" {
+  source  = var.module_source
+  version = var.module_version
+  
+  # Module inputs...
+}
+```
+
+### Use Cases
+
+1. **Environment-Specific Versions**: Different module versions per environment
+2. **Centralized Version Management**: Single source of truth for all module versions
+3. **Dynamic Module Selection**: Choose modules based on conditions
+4. **CI/CD Integration**: Pass module versions from pipeline variables
+5. **Testing**: Easy switching between module versions
+6. **Multi-Tenancy**: Different module sources per tenant
+
+### Hands-On Lab
+
+See the complete lab with 12 practical examples:
+- **Location**: `dynamic-module-sources/`
+- **Examples**: Environment versioning, version matrix, canary deployments, tenant configs, CI/CD integration
+- **Tests**: Comprehensive test coverage for all scenarios
+
+### Key Benefits
+
+- ✅ **Flexibility**: Dynamic module selection based on variables
+- ✅ **Consistency**: Centralized version management
+- ✅ **Automation**: CI/CD-driven module versioning
+- ✅ **Testing**: Easy version switching for testing
+- ✅ **Multi-Environment**: Different versions per environment
+
+### Learn More
+
+For detailed documentation, examples, and best practices, see:
+- [Dynamic Module Sources README](dynamic-module-sources/README.md)
+- [Example Implementation](dynamic-module-sources/example/)
+
+
 ## 📂 Supplemental Content
 
 | Supplement | Topic | Directory |

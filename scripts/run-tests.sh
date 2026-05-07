@@ -24,11 +24,11 @@
 #   - Run from the hashi-training/ root directory
 #
 # CORE TRAINING (local/libvirt providers — command = plan, no daemon needed):
-#   TF-101 (all), TF-102 (all), TF-103 (all), TF-104 (all)
-#   TF-201/moved-blocks, TF-202 (all), TF-203 (all), TF-204/removed-blocks, TF-204/identity-import
-#   TF-301/3-sensitive-values, TF-301/4-cross-variable-validation, TF-301/5-ephemeral-values
-#   TF-302/3-lifecycle-arguments, TF-302/4-write-only-attributes
-#   TF-305/1-workspaces, TF-306 (all)
+#   TF-101 (all), TF-102 (all + 6-deprecated-attribute), TF-103 (all), TF-104 (all)
+#   TF-201/moved-blocks, TF-201/dynamic-module-sources, TF-202 (all), TF-203 (all), TF-204/removed-blocks, TF-204/identity-import
+#   TF-301/3-sensitive-values, TF-301/4-cross-variable-validation, TF-301/5-ephemeral-values, TF-301/6-output-type-constraints
+#   TF-302/3-lifecycle-arguments, TF-302/4-write-only-attributes, TF-302/5-deprecation-warnings
+#   TF-305/1-workspaces, TF-306 (all + 5-type-conversion)
 #
 # CLOUD MODULES (mock_provider — no credentials needed):
 #   AWS-201, AWS-202, AWS-203, AWS-204
@@ -69,6 +69,7 @@ TESTABLE_EXAMPLES=(
   "TF-100-fundamentals/TF-102-variables-loops/3-env-vars/example"
   "TF-100-fundamentals/TF-102-variables-loops/4-functions/example"
   "TF-100-fundamentals/TF-102-variables-loops/5-for-expressions/example"
+  "TF-100-fundamentals/TF-102-variables-loops/6-deprecated-attribute/example"
 
   "TF-100-fundamentals/TF-103-infrastructure/example"
   "TF-100-fundamentals/TF-103-infrastructure/1-networks/example"
@@ -83,6 +84,7 @@ TESTABLE_EXAMPLES=(
   # ── TF-200: Modules & Patterns ──────────────────────────────────────────────
   "TF-200-modules/TF-201-module-design/example"
   "TF-200-modules/TF-201-module-design/moved-blocks/example"
+  "TF-200-modules/TF-201-module-design/dynamic-module-sources/example"
 
   "TF-200-modules/TF-202-advanced-patterns/example"
   "TF-200-modules/TF-202-advanced-patterns/2-canary-deployments/example"
@@ -98,14 +100,17 @@ TESTABLE_EXAMPLES=(
   "TF-300-advanced/TF-301-validation/3-sensitive-values/example"
   "TF-300-advanced/TF-301-validation/4-cross-variable-validation/example"
   "TF-300-advanced/TF-301-validation/5-ephemeral-values/example"
+  "TF-300-advanced/TF-301-validation/6-output-type-constraints/example"
   "TF-300-advanced/TF-302-conditions-checks/3-lifecycle-arguments/example"
   "TF-300-advanced/TF-302-conditions-checks/4-write-only-attributes/example"
+  "TF-300-advanced/TF-302-conditions-checks/5-deprecation-warnings/example"
   "TF-300-advanced/TF-303-test-framework/example"
   "TF-300-advanced/TF-305-workspaces-remote-state/1-workspaces/example"
   "TF-300-advanced/TF-306-functions/1-string-functions/example"
   "TF-300-advanced/TF-306-functions/2-collection-functions/example"
   "TF-300-advanced/TF-306-functions/3-filesystem-functions/example"
   "TF-300-advanced/TF-306-functions/4-encoding-functions/example"
+  "TF-300-advanced/TF-306-functions/5-type-conversion/example"
 
   # ── Cloud Modules: AWS-200 (mock_provider — no credentials needed) ──────────
   "cloud-modules/AWS-200-terraform/AWS-201-setup-auth/example"

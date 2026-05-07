@@ -67,6 +67,52 @@ Master check blocks for final infrastructure validation.
 
 ---
 
+### 3. Lifecycle Meta-Arguments (`3-lifecycle-arguments/`)
+
+Master all lifecycle meta-arguments for fine-grained resource control.
+
+**Topics Covered**:
+- `create_before_destroy` for zero-downtime updates
+- `prevent_destroy` for critical resources
+- `ignore_changes` for external modifications
+- `replace_triggered_by` for coordinated replacements
+- Combining lifecycle arguments effectively
+
+**See**: [3-lifecycle-arguments/README.md](3-lifecycle-arguments/README.md)
+
+---
+
+### 4. Write-Only Attributes (`4-write-only-attributes/`)
+
+Learn to use write-only attributes for secure secret handling (Terraform 1.11+).
+
+**Topics Covered**:
+- Write-only attribute syntax (`_wo` suffix)
+- Passing secrets without state storage
+- Security benefits and use cases
+- Migration from regular attributes
+- Best practices for secret management
+
+**See**: [4-write-only-attributes/README.md](4-write-only-attributes/README.md)
+
+---
+
+### 5. Enhanced Deprecation Detection (`5-deprecation-warnings/`) [NEW — Terraform 1.15]
+
+Understand how Terraform 1.15 improves deprecation detection and reporting.
+
+**Topics Covered**:
+- Improved detection of deprecated attributes and blocks
+- Provider deprecation messages in warnings
+- Understanding deprecation warnings
+- Migration strategies for deprecated features
+- Best practices for handling deprecations
+
+**See**: [5-deprecation-warnings/README.md](5-deprecation-warnings/README.md)
+
+
+---
+
 ## 🎓 Learning Objectives
 
 ### By the End of This Course

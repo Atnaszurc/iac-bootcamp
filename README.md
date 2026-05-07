@@ -3,7 +3,7 @@
 **A comprehensive, hands-on training program to master Infrastructure as Code**
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Terraform](https://img.shields.io/badge/Terraform-1.14+-purple.svg)](https://www.terraform.io/)
+[![Terraform](https://img.shields.io/badge/Terraform-1.15+-purple.svg)](https://www.terraform.io/)
 [![Packer](https://img.shields.io/badge/Packer-1.14+-blue.svg)](https://www.packer.io/)
 
 ---
@@ -20,7 +20,7 @@ This training program takes you from **zero knowledge** to **advanced proficienc
 - ✅ **Modular Design** - Choose your learning path
 - ✅ **Production-Ready Skills** - Enterprise-grade patterns
 - ✅ **Cloud-Agnostic** - Concepts apply to any provider
-- ✅ **Modern Terraform** - Latest features (1.14+)
+- ✅ **Modern Terraform** - Latest features (1.15+)
 
 ---
 
@@ -38,13 +38,16 @@ TF-100: Terraform Fundamentals (6 hours)
 │   └── [+] terraform_data vs null_resource, local-exec provisioner
 ├── TF-102: Variables, Loops & Functions (1.5h)
 │   └── [+] for expressions (list/map comprehensions)
+│   └── [+] deprecated attribute for variables/outputs (1.15+)
 ├── TF-103: Infrastructure Resources (2h)
 └── TF-104: State Management & CLI (1h)
     └── [+] terraform console as a learning tool
+    └── [+] validate command backend checking (1.15+)
 
 TF-200: Terraform Modules & Patterns (6 hours)
 ├── TF-201: Module Design & Composition (1.5h)
 │   └── [+] moved blocks (Terraform 1.1+)
+│   └── [+] variables/locals in module source & version (1.15+)
 ├── TF-202: Advanced Module Patterns (1.5h)
 ├── TF-203: YAML-Driven Configuration (1.5h)
 │   └── [+] jsondecode() and JSON-driven configuration
@@ -56,16 +59,22 @@ TF-300: Testing, Validation & Advanced Features (8 hours)
 │   └── [+] sensitive variables, outputs & nonsensitive()
 │   └── [+] ephemeral variables & outputs (1.10+)
 │   └── [+] cross-variable validation (1.9+)
+│   └── [+] deprecated attribute for variables/outputs (1.15+)
 ├── TF-302: Pre/Post Conditions & Check Blocks (1.5h)
 │   └── [+] lifecycle meta-arguments (complete unit)
 │   └── [+] write-only attributes (1.11+)
+│   └── [+] improved deprecation detection & messages (1.15+)
 ├── TF-303: Terraform Test Framework (1h)
 │   └── [+] JUnit XML output, parallel runs, override_during (1.11-1.12)
+│   └── [+] mock block functions support (1.15+)
+│   └── [+] backend blocks in run blocks (1.15 experimental)
 ├── TF-304: Policy as Code - OPA/Rego (1h)
 ├── TF-305: Workspaces & Remote State (1.5h)
 │   └── [+] S3 native state locking (1.11+)
+│   └── [+] S3 backend aws login authentication (1.15+)
 ├── TF-306: Terraform Functions Deep Dive (1.5h)
 │   └── [+] templatestring, ephemeralasnull, element() negative indices (1.9-1.10)
+│   └── [+] convert() function for inline type conversions (1.15+)
 └── TF-307: List Resources, terraform query & Actions (1h) [NEW — 1.14] *
     └── [*] Conceptual/design-focused (requires provider support)
 
@@ -76,6 +85,7 @@ TF-400: HCP Terraform & Enterprise Features (6 hours)
 ├── TF-404: Sentinel Policy as Code (1h)
 └── TF-405: Terraform Stacks (1h) [NEW — 1.13] *
     └── [*] Conceptual/design-focused (requires HCP Terraform)
+    └── [+] Stacks input variable validation (1.15+)
 
 PKR-100: Packer Fundamentals (4 hours)
 ├── PKR-101: Introduction to Image Building (1h)
@@ -360,7 +370,7 @@ hashi-training/
 - Add modules as you grow
 
 **4. Modern Features**
-- Terraform 1.14+ features
+- Terraform 1.15+ features
 - Ephemeral resources & values (1.10+)
 - Write-only attributes (1.11+)
 - Test framework with JUnit & parallel runs (1.11-1.12)
@@ -368,6 +378,8 @@ hashi-training/
 - Identity-based import (1.12+)
 - Terraform Stacks (1.13+)
 - List resources & Actions block (1.14+)
+- Deprecated attribute for variables/outputs (1.15+)
+- convert() function & module source variables (1.15+)
 - Latest best practices
 
 **5. Production-Ready**
@@ -422,11 +434,11 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) file for
 
 ## 🗺️ Roadmap
 
-### Current Version: 3.3 (Terraform 1.9–1.14 Features Added)
+### Current Version: 3.4 (Terraform 1.15 Features Added)
 - ✅ University-style course numbering (100-400 levels)
 - ✅ Modular cloud approach
 - ✅ Libvirt-based core training
-- ✅ Terraform 1.14+ features
+- ✅ Terraform 1.15+ features
 - ✅ Test framework integration
 - ✅ Ansible provisioner examples
 - ✅ Comprehensive documentation
@@ -446,6 +458,15 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) file for
 - ✅ TF-405: Terraform Stacks (new expert course, 1.13+)
 - ✅ AWS provider v6 compatibility review & updates (cloud-modules)
 - ✅ CLI documentation updates: new commands 1.9–1.14 (TF-104)
+- ✅ Deprecated attribute for variables/outputs (TF-102, TF-301, 1.15+)
+- ✅ Variables/locals in module source & version (TF-201, 1.15+)
+- ✅ convert() function for inline type conversions (TF-306, 1.15+)
+- ✅ S3 backend aws login authentication (TF-305, 1.15+)
+- ✅ Improved deprecation detection & messages (TF-302, 1.15+)
+- ✅ Test framework: mock block functions, backend blocks (TF-303, 1.15+)
+- ✅ Validate command backend checking (TF-104, 1.15+)
+- ✅ Stacks input variable validation (TF-405, 1.15+)
+- ✅ Output type constraints (TF-301, 1.15+)
 
 ### Planned
 - [ ] Kubernetes integration examples
@@ -490,12 +511,12 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) file for
 - **TF-204**: Import & Migration Strategies
 
 ### TF-300 Series (Advanced)
-- **TF-301**: Input Validation, Advanced Functions, Sensitive & Ephemeral Values
-- **TF-302**: Pre/Post Conditions, Check Blocks, Lifecycle Meta-Arguments & Write-Only Attributes
-- **TF-303**: Terraform Test Framework (JUnit XML, parallel runs, override_during)
+- **TF-301**: Input Validation, Advanced Functions, Sensitive & Ephemeral Values, Deprecated Attribute, Output Type Constraints
+- **TF-302**: Pre/Post Conditions, Check Blocks, Lifecycle Meta-Arguments, Write-Only Attributes & Improved Deprecation
+- **TF-303**: Terraform Test Framework (JUnit XML, parallel runs, override_during, mock functions, backend blocks)
 - **TF-304**: Policy as Code - OPA/Rego
-- **TF-305**: Workspaces & Remote State (S3 native locking)
-- **TF-306**: Terraform Functions Deep Dive (templatestring, ephemeralasnull, element negative indices)
+- **TF-305**: Workspaces & Remote State (S3 native locking, aws login auth)
+- **TF-306**: Terraform Functions Deep Dive (templatestring, ephemeralasnull, element negative indices, convert)
 - **TF-307**: List Resources, terraform query & Actions *(NEW — 1.14)*
 
 ### TF-400 Series (Expert)

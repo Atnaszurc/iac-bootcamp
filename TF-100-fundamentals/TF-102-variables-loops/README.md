@@ -32,7 +32,7 @@ By the end of this module, you will be able to:
 
 ## 📚 Course Structure
 
-This course is organized into **5 progressive sections**. Complete them in order for the best learning experience.
+This course is organized into **6 progressive sections**. Complete them in order for the best learning experience.
 
 ### Section 1: Variables 📦
 **Directory**: [`1-variables/`](./1-variables/)  
@@ -142,6 +142,29 @@ This course is organized into **5 progressive sections**. Complete them in order
 
 ---
 
+### Section 6: Deprecated Attribute 🏷️ **NEW in Terraform 1.15+**
+**Directory**: [`6-deprecated-attribute/`](./6-deprecated-attribute/)
+**Duration**: 15 minutes
+
+**Topics Covered**:
+- Marking variables as deprecated
+- Marking outputs as deprecated
+- Deprecation warning messages
+- Migration strategies and best practices
+- Backward compatibility patterns
+- Version planning for removals
+
+**What You'll Learn**:
+- How to deprecate variables and outputs gracefully
+- How to write clear deprecation messages
+- How to maintain backward compatibility during transitions
+- How to guide users through API evolution
+- Best practices for module versioning
+
+**[→ Start Section 6: Deprecated Attribute](./6-deprecated-attribute/README.md)**
+
+---
+
 ## 🚀 Quick Start
 
 ### Option 1: Follow the Course Path (Recommended)
@@ -176,6 +199,20 @@ cat README.md
 cd example/
 terraform init
 terraform apply
+
+# 5. Learn for Expressions
+cd ../5-for-expressions/
+cat README.md
+cd example/
+terraform init
+terraform apply
+
+# 6. Understand Deprecated Attribute (Terraform 1.15+)
+cd ../6-deprecated-attribute/
+cat README.md
+cd example/
+terraform init
+terraform plan  # See deprecation warnings
 ```
 
 ### Option 2: Jump to a Specific Topic
@@ -187,6 +224,7 @@ If you're already familiar with some topics, jump directly to what you need:
 - **Managing different environments?** → [`3-env-vars/`](./3-env-vars/)
 - **Need to transform data?** → [`4-functions/`](./4-functions/)
 - **Need to transform collections inline?** → [`5-for-expressions/`](./5-for-expressions/)
+- **Want to deprecate variables/outputs?** → [`6-deprecated-attribute/`](./6-deprecated-attribute/) **(Terraform 1.15+)**
 
 ---
 
@@ -305,16 +343,26 @@ locals {
    - Understand variable precedence
    - Practice with different environments
 
-4. **Finally**: [Section 4 - Functions](./4-functions/README.md)
+4. **Then**: [Section 4 - Functions](./4-functions/README.md)
    - Master data transformation
    - Learn common function patterns
    - Apply functions to real scenarios
 
+5. **Next**: [Section 5 - for Expressions](./5-for-expressions/README.md)
+   - Transform collections inline
+   - Filter and map data
+   - Understand list vs map comprehensions
+
+6. **Finally**: [Section 6 - Deprecated Attribute](./6-deprecated-attribute/README.md) **(Terraform 1.15+)**
+   - Learn to deprecate variables and outputs
+   - Maintain backward compatibility
+   - Guide users through migrations
+
 ### Time Commitment
 
-- **Minimum**: 1.5 hours (reading + basic examples)
-- **Recommended**: 3 hours (reading + all examples + experimentation)
-- **Mastery**: 5+ hours (reading + examples + building your own configurations)
+- **Minimum**: 1.75 hours (reading + basic examples)
+- **Recommended**: 3.5 hours (reading + all examples + experimentation)
+- **Mastery**: 6+ hours (reading + examples + building your own configurations)
 
 ---
 
@@ -518,6 +566,8 @@ Or jump to a specific section:
 - [Section 2: Loops](./2-loops/README.md)
 - [Section 3: Environment Variables](./3-env-vars/README.md)
 - [Section 4: Functions](./4-functions/README.md)
+- [Section 5: for Expressions](./5-for-expressions/README.md)
+- [Section 6: Deprecated Attribute](./6-deprecated-attribute/README.md) **(Terraform 1.15+)**
 
 ---
 
@@ -529,14 +579,17 @@ Use this checklist to track your progress:
 - [ ] **Section 2: Loops** - count, for_each, iteration patterns
 - [ ] **Section 3: Environment Variables** - Variable sources, precedence
 - [ ] **Section 4: Functions** - String, collection, type, file functions
+- [ ] **Section 5: for Expressions** - List/map comprehensions, filtering
+- [ ] **Section 6: Deprecated Attribute** - Deprecation, migration strategies (Terraform 1.15+)
 - [ ] **Checkpoint Quiz** - Test your understanding
 - [ ] **Practice Projects** - Build real configurations
 
 ---
 
-**Course**: TF-100 Terraform Fundamentals  
-**Module**: TF-102  
-**Version**: 1.0  
-**Last Updated**: 2026-02-26
+**Course**: TF-100 Terraform Fundamentals
+**Module**: TF-102
+**Version**: 1.1
+**Last Updated**: 2026-05-07
+**Terraform Version**: 1.15+ (Section 6 requires 1.15+)
 
 **Ready to make your Terraform configurations dynamic and reusable? Let's go!** 🚀

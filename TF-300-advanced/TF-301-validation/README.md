@@ -661,3 +661,76 @@ After completing TF-301:
 *Last Updated: 2026-02-26*  
 *Course Version: 3.0*  
 *Terraform Version: 1.14+*
+## 🆕 Section 6: Output Type Constraints (Terraform 1.15+)
+
+**New Feature**: Terraform 1.15 introduces explicit type constraints for output blocks, enabling type safety and early error detection.
+
+### Overview
+
+Output type constraints allow you to specify the expected type of an output value, similar to variable type constraints. This ensures outputs match expected types and helps catch type mismatches at plan time.
+
+### Key Benefits
+
+- ✅ **Type Safety**: Catch type mismatches at plan time
+- ✅ **Documentation**: Self-documenting output types
+- ✅ **Module Contracts**: Enforce type guarantees for module outputs
+- ✅ **Refactoring Safety**: Detect breaking changes immediately
+- ✅ **Better Tooling**: Improved IDE support and autocomplete
+
+### Basic Example
+
+```hcl
+output "instance_id" {
+  description = "The instance ID"
+  type        = string  # Explicit type constraint
+  value       = aws_instance.example.id
+}
+
+output "subnet_ids" {
+  description = "List of subnet IDs"
+  type        = list(string)
+  value       = aws_subnet.private[*].id
+}
+
+output "config" {
+  description = "Configuration object"
+  type = object({
+    name = string
+    port = number
+  })
+  value = {
+    name = "my-app"
+    port = 8080
+  }
+}
+```
+
+### Supported Types
+
+- **Primitives**: `string`, `number`, `bool`
+- **Collections**: `list(type)`, `set(type)`, `map(type)`
+- **Structural**: `object({...})`, `tuple([...])`
+- **Optional**: `optional(type, default)`
+
+### Use Cases
+
+1. **Module Output Contracts**: Enforce type guarantees in reusable modules
+2. **Type Validation**: Catch type errors before they cause problems
+3. **Complex Structures**: Define precise structures for complex outputs
+4. **Optional Fields**: Use optional attributes for flexible outputs
+5. **Documentation**: Make output types explicit and clear
+
+### Hands-On Lab
+
+See the complete lab with 12 examples:
+- **Location**: `6-output-type-constraints/`
+- **Examples**: Basic types, collections, objects, nested structures, optional attributes
+- **Tests**: 20+ test scenarios covering all type patterns
+
+### Learn More
+
+For detailed documentation, examples, and best practices:
+- [Output Type Constraints README](6-output-type-constraints/README.md)
+- [Example Implementation](6-output-type-constraints/example/)
+
+---

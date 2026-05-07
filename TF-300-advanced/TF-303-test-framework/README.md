@@ -1587,6 +1587,245 @@ run "example" {
 
 ---
 
+## New in Terraform 1.15
+
+### Functions in Mock Blocks
+
+Terraform 1.15 allows you to use **functions within mock blocks**, enabling more dynamic and realistic mock data:
+
+```hcl
+mock_provider "local" {
+  mock_resource "local_file" {
+    defaults = {
+      # Use functions to generate dynamic mock data
+      id       = "mock-${uuid()}"
+      filename = "/tmp/test-${timestamp()}.txt"
+      content  = upper("mock content")
+      
+      # Use conditional logic
+      file_permission = var.environment == "prod" ? "0600" : "0644"
+    }
+  }
+}
+
+run "test_with_dynamic_mocks" {
+  command = plan
+  
+  assert {
+    condition     = can(regex("^mock-[a-f0-9-]+$", local_file.example.id))
+    error_message = "Mock ID should follow UUID pattern"
+  }
+}
+```
+
+**Benefits**:
+- **Dynamic Values**: Generate unique IDs, timestamps, or random values
+- **Conditional Logic**: Adjust mocks based on variables or environment
+- **Realistic Data**: Use functions like `uuid()`, `timestamp()`, `formatdate()`
+- **Complex Scenarios**: Test edge cases with computed mock values
+
+**Common Use Cases**:
+```hcl
+mock_provider "aws" {
+  mock_resource "aws_instance" {
+    defaults = {
+      # Generate realistic ARN
+      arn = "arn:aws:ec2:us-east-1:123456789012:instance/${uuid()}"
+      
+      # Dynamic timestamps
+      launch_time = timestamp()
+      
+      # Conditional values
+      instance_type = var.environment == "prod" ? "t3.large" : "t3.micro"
+      
+      # Computed tags
+      tags = merge(
+        var.common_tags,
+        {
+          "CreatedAt" = formatdate("YYYY-MM-DD", timestamp())
+        }
+      )
+    }
+  }
+}
+```
+
+---
+
+### Experimental: Backend Blocks in Run Blocks
+
+> **⚠️ Experimental Feature**: This feature is experimental in Terraform 1.15 and requires alpha/beta builds. It may change in future versions.
+
+Run blocks can now specify `backend` blocks to load state from a specific backend instead of starting from empty state:
+
+```hcl
+run "test_with_existing_state" {
+  command = plan
+  
+  # Load state from S3 backend
+  backend "s3" {
+    bucket = "my-test-state-bucket"
+    key    = "test-fixtures/baseline.tfstate"
+    region = "us-east-1"
+  }
+  
+  assert {
+    condition     = length(data.aws_instances.existing) > 0
+    error_message = "Should find existing instances from loaded state"
+  }
+}
+```
+
+**Use Cases**:
+- **Long-Running Test Infrastructure**: Keep test infrastructure alive between test runs
+- **Baseline Testing**: Test changes against a known baseline state
+- **Integration Testing**: Test against real, persistent infrastructure
+- **Cost Optimization**: Avoid recreating expensive resources for every test
+
+**Combined with `skip_cleanup`**:
+```hcl
+# First run: Create baseline infrastructure
+run "create_baseline" {
+  command = apply
+  
+  # Don't clean up after this run
+  skip_cleanup = true
+  
+  # State will be saved to .terraform directory
+}
+
+# Second run: Test changes against baseline
+run "test_changes" {
+  command = plan
+  
+  # Load state from previous run
+  backend "local" {
+    path = ".terraform/test-state/create_baseline.tfstate"
+  }
+  
+  variables {
+    # Add new resources
+    additional_servers = 2
+  }
+  
+  assert {
+    condition     = output.total_servers == 3
+    error_message = "Should have 3 servers (1 baseline + 2 new)"
+  }
+}
+```
+
+---
+
+### Experimental: `skip_cleanup` Attribute
+
+> **⚠️ Experimental Feature**: This feature is experimental in Terraform 1.15 and requires alpha/beta builds.
+
+The `skip_cleanup` attribute tells `terraform test` not to clean up state files produced by run blocks:
+
+```hcl
+# Test file level - applies to all run blocks
+skip_cleanup = true
+
+run "create_persistent_infrastructure" {
+  command = apply
+  
+  # This run's state will be saved to:
+  # .terraform/test-state/<test-file>/<run-name>.tfstate
+}
+
+# Or per-run block
+run "create_baseline" {
+  command      = apply
+  skip_cleanup = true  # Only this run's state is preserved
+}
+
+run "test_changes" {
+  command = plan
+  # This run's state will be cleaned up normally
+}
+```
+
+**State File Location**:
+When `skip_cleanup = true`, state files are saved to:
+```
+.terraform/test-state/<test-file-name>/<run-block-name>.tfstate
+```
+
+**Cleanup with `terraform test cleanup`**:
+```bash
+# List state files left behind
+terraform test cleanup -list
+
+# Clean up all leftover state files
+terraform test cleanup
+
+# Clean up specific test file's state
+terraform test cleanup -filter=tests/integration.tftest.hcl
+```
+
+**Use Cases**:
+- **Development Workflow**: Keep test infrastructure running during development
+- **Debugging**: Inspect infrastructure after test failures
+- **Cost Optimization**: Reuse expensive resources across test runs
+- **Integration Testing**: Maintain long-lived test environments
+
+**Example Workflow**:
+```hcl
+# tests/persistent-integration.tftest.hcl
+
+# Keep infrastructure alive between test runs
+skip_cleanup = true
+
+run "setup_database" {
+  command = apply
+  
+  assert {
+    condition     = aws_db_instance.test.status == "available"
+    error_message = "Database should be available"
+  }
+}
+
+run "test_application" {
+  command = plan
+  
+  # Uses state from setup_database run
+  assert {
+    condition     = can(aws_db_instance.test.endpoint)
+    error_message = "Should be able to connect to database"
+  }
+}
+
+# When done developing, clean up:
+# terraform test cleanup
+```
+
+**Best Practices**:
+1. **Use in Development Only**: Don't use `skip_cleanup` in CI/CD pipelines
+2. **Document Cleanup**: Add comments explaining how to clean up
+3. **Regular Cleanup**: Run `terraform test cleanup` regularly
+4. **Cost Awareness**: Monitor costs of persistent test infrastructure
+5. **State Management**: Use descriptive run block names for easy identification
+
+---
+
+### Summary of Terraform 1.15 Test Enhancements
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| **Functions in Mock Blocks** | ✅ Stable | Use Terraform functions within mock data for dynamic values |
+| **Backend Blocks in Run Blocks** | ⚠️ Experimental | Load state from backends for testing against existing infrastructure |
+| **`skip_cleanup` Attribute** | ⚠️ Experimental | Preserve state files between test runs for long-lived test infrastructure |
+| **`terraform test cleanup`** | ⚠️ Experimental | Clean up state files left behind by `skip_cleanup` |
+
+**Migration Notes**:
+- **Functions in Mock Blocks**: Available immediately in Terraform 1.15+
+- **Experimental Features**: Require alpha/beta builds or experimental flag
+- **Production Use**: Wait for GA (General Availability) before using in production
+
+
+---
+
 ## CI/CD Integration
 
 For full CI/CD integration examples (GitHub Actions, Azure DevOps, JUnit XML samples), see:
@@ -1647,6 +1886,9 @@ In this course, you learned:
 ✅ **`state_key`** (1.11+): Shared state between run blocks for multi-step scenarios
 ✅ **Parallel Execution** (1.12+): `-parallelism` flag for faster test suites
 ✅ **File-Level Variables** (1.13+): `variable` blocks scoped to test files
+✅ **Functions in Mock Blocks** (1.15+): Dynamic mock data using Terraform functions
+✅ **Backend Blocks in Run Blocks** (1.15+ Experimental): Load state from backends for testing
+✅ **`skip_cleanup` Attribute** (1.15+ Experimental): Preserve state between test runs
 
 ### Key Takeaways
 

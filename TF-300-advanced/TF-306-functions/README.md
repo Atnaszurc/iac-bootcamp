@@ -1,9 +1,9 @@
 # TF-306: Terraform Functions Deep Dive
 
-**Course Level**: 300 (Advanced)  
-**Duration**: 1.5 hours  
-**Prerequisites**: TF-102 (Variables, Loops & Functions), TF-201 (Module Design)  
-**Terraform Version**: 1.14+
+**Course Level**: 300 (Advanced)
+**Duration**: 1.75 hours
+**Prerequisites**: TF-102 (Variables, Loops & Functions), TF-201 (Module Design)
+**Terraform Version**: 1.15+ (Section 5 requires 1.15+)
 
 ---
 
@@ -112,6 +112,26 @@ Convert data between formats for APIs, cloud-init, and cross-module data passing
 
 ---
 
+### Section 5: Type Conversion with convert() (15 min) ⭐ **New in Terraform 1.15**
+**Directory**: `5-type-conversion/`
+
+Perform precise type conversions with explicit type constraints.
+
+| Function | Purpose |
+|----------|---------|
+| `convert()` ⭐ **New 1.15** | Convert value to specific type with explicit constraint |
+
+**Key Features**:
+- Explicit type constraints for complex types
+- Object and nested structure conversions
+- Type-safe API response parsing
+- Configuration validation
+- Better error messages than traditional conversion functions
+
+**Key Pattern**: Converting API responses (all strings) to properly typed objects for type-safe operations.
+
+---
+
 ## 🗂️ Directory Structure
 
 ```
@@ -129,10 +149,17 @@ TF-306-functions/
 │   ├── README.md                      # Filesystem functions reference + examples
 │   └── example/
 │       └── main.tf                    # Working example (local provider)
-└── 4-encoding-functions/
-    ├── README.md                      # Encoding functions reference + examples
+├── 4-encoding-functions/
+│   ├── README.md                      # Encoding functions reference + examples
+│   └── example/
+│       └── main.tf                    # Working example (local provider)
+└── 5-type-conversion/                 # NEW in Terraform 1.15+
+    ├── README.md                      # convert() function reference + examples
     └── example/
-        └── main.tf                    # Working example (local provider)
+        ├── main.tf                    # Working example (local provider)
+        ├── outputs.tf                 # Conversion results
+        └── tests/
+            └── basic.tftest.hcl       # Test coverage
 ```
 
 ---
@@ -165,6 +192,12 @@ cd ../../4-encoding-functions/example
 terraform init
 terraform apply -auto-approve
 cat output/encoding-functions-summary.txt
+
+# Section 5: Type Conversion (Terraform 1.15+)
+cd ../../5-type-conversion/example
+terraform init
+terraform apply -auto-approve
+cat output/00-summary.txt
 ```
 
 ---
@@ -209,6 +242,19 @@ tolist(["a", "b", "c", "d"])
 
 > yamlencode({packages = ["nginx", "curl"]})
 "packages:\n- nginx\n- curl\n"
+
+# Type conversion (Terraform 1.15+)
+> convert("8080", number)
+8080
+
+> convert({name = "app", port = "8080"}, object({name = string, port = number}))
+{
+  "name" = "app"
+  "port" = 8080
+}
+
+> convert(["1", "2", "3"], list(number))
+[1, 2, 3]
 ```
 
 ---

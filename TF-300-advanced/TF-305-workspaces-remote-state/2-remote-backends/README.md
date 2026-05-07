@@ -270,6 +270,160 @@ terraform init -reconfigure
 aws dynamodb delete-table --table-name terraform-state-lock
 ```
 
+### Authentication via `aws login` (Terraform 1.15+)
+
+Terraform 1.15 adds support for authenticating to S3 backends using **`aws login`**, which provides temporary credentials through AWS IAM Identity Center (formerly AWS SSO).
+
+**Benefits**:
+- ✅ No long-lived credentials stored on disk
+- ✅ Temporary credentials that expire automatically
+- ✅ Centralized access management through IAM Identity Center
+- ✅ Multi-account access with role switching
+- ✅ Better security posture
+
+#### Configuration
+
+```hcl
+terraform {
+  required_version = ">= 1.15.0"
+
+  backend "s3" {
+    bucket       = "my-terraform-state"
+    key          = "prod/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
+
+    # No access_key or secret_key needed!
+    # Terraform will use credentials from aws login
+  }
+}
+```
+
+#### Setup and Usage
+
+```bash
+# Step 1: Configure AWS CLI with IAM Identity Center
+aws configure sso
+
+# Follow prompts:
+# - SSO start URL: https://my-company.awsapps.com/start
+# - SSO region: us-east-1
+# - Account: Select your AWS account
+# - Role: Select your role (e.g., AdministratorAccess)
+# - CLI profile name: my-profile
+
+# Step 2: Login to get temporary credentials
+aws sso login --profile my-profile
+
+# Step 3: Set the AWS profile for Terraform
+export AWS_PROFILE=my-profile
+
+# Step 4: Initialize and use Terraform
+terraform init
+terraform plan
+terraform apply
+```
+
+#### Credential Precedence
+
+Terraform checks for AWS credentials in this order:
+
+1. **Environment variables**: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`
+2. **Shared credentials file**: `~/.aws/credentials` (from `aws login` or `aws configure`)
+3. **Shared config file**: `~/.aws/config` (SSO configuration)
+4. **EC2 instance metadata**: When running on EC2
+5. **ECS task role**: When running in ECS
+
+With `aws login`, credentials are stored in `~/.aws/cli/cache/` and automatically refreshed.
+
+#### Multi-Account Access
+
+```bash
+# Configure multiple profiles for different accounts
+aws configure sso --profile dev-account
+aws configure sso --profile prod-account
+
+# Switch between accounts
+export AWS_PROFILE=dev-account
+terraform init  # Uses dev account
+
+export AWS_PROFILE=prod-account
+terraform init  # Uses prod account
+```
+
+#### CI/CD Integration
+
+For CI/CD pipelines, use OIDC (OpenID Connect) instead of `aws login`:
+
+```hcl
+# GitHub Actions example
+terraform {
+  backend "s3" {
+    bucket       = "my-terraform-state"
+    key          = "prod/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
+    
+    # CI/CD uses OIDC role assumption
+    role_arn = "arn:aws:iam::123456789012:role/github-actions-terraform"
+  }
+}
+```
+
+#### Troubleshooting
+
+**Error: "No valid credential sources found"**
+```bash
+# Check if logged in
+aws sts get-caller-identity --profile my-profile
+
+# If expired, login again
+aws sso login --profile my-profile
+```
+
+**Error: "Token has expired"**
+```bash
+# Credentials expire after a few hours (default: 12 hours)
+# Simply login again
+aws sso login --profile my-profile
+```
+
+**Check current credentials**
+```bash
+# Verify which credentials Terraform will use
+aws sts get-caller-identity
+
+# Output shows:
+# - UserId: Your user ID
+# - Account: AWS account number
+# - Arn: Your role ARN
+```
+
+#### Best Practices
+
+1. **Use `aws login` for local development**: Temporary credentials are more secure than long-lived access keys
+
+2. **Use OIDC for CI/CD**: GitHub Actions, GitLab CI, and other platforms support OIDC for temporary credentials
+
+3. **Set credential expiration**: Configure shorter expiration times for sensitive environments
+
+4. **Rotate regularly**: Even with temporary credentials, rotate your SSO configuration periodically
+
+5. **Audit access**: Use AWS CloudTrail to monitor who accessed state files
+
+#### Comparison: Authentication Methods
+
+| Method | Security | Setup Complexity | Best For |
+|--------|----------|------------------|----------|
+| **`aws login`** (1.15+) | ✅ High (temporary) | Medium | Local development |
+| **OIDC** | ✅ High (temporary) | High | CI/CD pipelines |
+| **IAM User Keys** | ⚠️ Low (long-lived) | Low | ❌ Not recommended |
+| **EC2 Instance Profile** | ✅ High (temporary) | Low | EC2-based workflows |
+| **ECS Task Role** | ✅ High (temporary) | Low | ECS-based workflows |
+
+
 ---
 
 ## 🔄 State Locking
