@@ -5,6 +5,9 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Terraform](https://img.shields.io/badge/Terraform-1.15+-purple.svg)](https://www.terraform.io/)
 [![Packer](https://img.shields.io/badge/Packer-1.14+-blue.svg)](https://www.packer.io/)
+[![Version](https://img.shields.io/badge/version-1.4.0-green.svg)](CHANGELOG.md)
+
+> 📋 **[View Changelog](CHANGELOG.md)** - See what's new in version 1.4.0
 
 ---
 

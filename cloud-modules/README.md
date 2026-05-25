@@ -67,6 +67,23 @@ Apply your Terraform skills to Google Cloud Platform — Google's innovative clo
 
 ---
 
+### IBM-200: IBM Cloud with Terraform
+**Duration**: 8-12 hours | **Directory**: `IBM-200-terraform/`
+
+Apply your Terraform skills to IBM Cloud — the enterprise hybrid cloud platform with AI and quantum computing capabilities.
+
+| Course | Topic | Duration |
+|--------|-------|----------|
+| IBM-201 | Setup & Authentication | 1-2h |
+| IBM-202 | Compute & Networking (VPC, VSI, Subnets) | 2-3h |
+| IBM-203 | Security & Storage (Security Groups, Key Protect, COS) | 2-3h |
+| IBM-204 | Advanced Patterns (Load Balancers, Multi-Tier Architecture) | 3-4h |
+
+**Prerequisites**: IBM Cloud account (free tier available)
+**[→ Start IBM-200](IBM-200-terraform/README.md)**
+
+---
+
 ### MC-300: Multi-Cloud Architecture
 **Duration**: 4 hours | **Directory**: `MC-300-multi-cloud/`
 
@@ -114,29 +131,37 @@ Total: ~27 hours | Cost: GCP free tier ($300 credit)
 ```
 Best for: Google Cloud careers, innovative cloud platform.
 
-### Path E: Multi-Cloud Expert
+### Path E: Core + IBM Cloud
 ```
-TF-100 → TF-200 → TF-300 → AWS-200 → AZ-200 → GCP-200 → MC-300
-Total: ~43 hours | Cost: All free tiers
+TF-100 → TF-200 → TF-300 → IBM-200
+Total: ~29-33 hours | Cost: IBM Cloud free tier
 ```
-Best for: Cloud architects, multi-cloud environments.
+Best for: Enterprise hybrid cloud, AI/quantum computing, IBM ecosystem.
+
+### Path F: Multi-Cloud Expert
+```
+TF-100 → TF-200 → TF-300 → AWS-200 → AZ-200 → GCP-200 → IBM-200 → MC-300
+Total: ~51-55 hours | Cost: All free tiers
+```
+Best for: Cloud architects, multi-cloud environments, enterprise solutions.
 
 ---
 
 ## 💡 Which Cloud Should I Choose?
 
-| Factor | AWS | Azure | GCP |
-|--------|-----|-------|-----|
-| Market share | #1 (32%) | #2 (22%) | #3 (11%) |
-| Job market | Largest | Strong enterprise | Growing rapidly |
-| Free tier | 12 months + always free | 12 months + always free | $300 credit + always free |
-| Best for | Startups, web apps | Enterprise, Microsoft shops | Data/ML, Kubernetes, Innovation |
-| Certifications | AWS SAA, SAP | AZ-104, AZ-305 | Associate/Professional Cloud |
-| Strengths | Mature, comprehensive | Enterprise integration | Innovation, BigQuery, GKE |
+| Factor | AWS | Azure | GCP | IBM Cloud |
+|--------|-----|-------|-----|-----------|
+| Market share | #1 (32%) | #2 (22%) | #3 (11%) | #4 (6%) |
+| Job market | Largest | Strong enterprise | Growing rapidly | Enterprise focused |
+| Free tier | 12 months + always free | 12 months + always free | $300 credit + always free | Lite tier + credits |
+| Best for | Startups, web apps | Enterprise, Microsoft shops | Data/ML, Kubernetes | Hybrid cloud, AI, Enterprise |
+| Certifications | AWS SAA, SAP | AZ-104, AZ-305 | Associate/Professional | IBM Cloud Professional |
+| Strengths | Mature, comprehensive | Enterprise integration | Innovation, BigQuery, GKE | Hybrid, AI/Watson, Security |
 
 **Not sure?** Start with AWS — it has the largest job market and most community resources.
 **Data/ML focus?** Consider GCP — excellent for data analytics and machine learning.
 **Enterprise?** Azure integrates well with Microsoft ecosystems.
+**Hybrid cloud/AI?** IBM Cloud excels in hybrid deployments and AI/Watson services.
 
 ---
 
@@ -188,6 +213,7 @@ cat README.md
 | AWS-200 | ✅ Ready | 4 courses, working examples |
 | AZ-200 | ✅ Ready | 4 courses, working examples |
 | GCP-200 | ✅ Ready | 4 courses, structure complete |
+| IBM-200 | ✅ Ready | 4 courses, comprehensive examples with tests |
 | MC-300 | 🚧 In Development | Structure ready, content planned |
 
 ---

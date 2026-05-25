@@ -14,6 +14,7 @@
 #   ./scripts/run-tests.sh AWS-200      # Run only AWS mock tests
 #   ./scripts/run-tests.sh AZ-200       # Run only Azure mock tests
 #   ./scripts/run-tests.sh GCP-200      # Run only GCP mock tests
+#   ./scripts/run-tests.sh IBM-200      # Run only IBM mock tests
 #   ./scripts/run-tests.sh MC-300       # Run only MC-300 multi-cloud tests
 #   ./scripts/run-tests.sh cloud        # Run all cloud mock tests
 #   ./scripts/run-tests.sh --list       # List all testable examples (no run)
@@ -34,6 +35,7 @@
 #   AWS-201, AWS-202, AWS-203, AWS-204
 #   AZ-201, AZ-202, AZ-203, AZ-204
 #   GCP-201, GCP-202, GCP-203, GCP-204
+#   IBM-201, IBM-202, IBM-203, IBM-204
 #   MC-301, MC-302, MC-303, MC-304
 #
 # SKIPPED (require live credentials or remote backend):
@@ -130,6 +132,12 @@ TESTABLE_EXAMPLES=(
   "cloud-modules/GCP-200-terraform/GCP-203-security-storage/example"
   "cloud-modules/GCP-200-terraform/GCP-204-advanced-patterns/example"
 
+  # ── Cloud Modules: IBM-200 (mock_provider — no credentials needed) ──────────
+  "cloud-modules/IBM-200-terraform/IBM-201-setup-auth/example"
+  "cloud-modules/IBM-200-terraform/IBM-202-compute-networking/example"
+  "cloud-modules/IBM-200-terraform/IBM-203-security-storage/example"
+  "cloud-modules/IBM-200-terraform/IBM-204-advanced-patterns/example"
+
   # ── Cloud Modules: MC-300 (mock_provider — both AWS + Azure, no credentials) ─
   "cloud-modules/MC-300-multi-cloud/MC-301-strategy/example"
   "cloud-modules/MC-300-multi-cloud/MC-302-abstraction/example"
@@ -170,6 +178,7 @@ print_usage() {
   echo "  $0 AWS-200          Run only AWS mock tests"
   echo "  $0 AZ-200           Run only Azure mock tests"
   echo "  $0 GCP-200          Run only GCP mock tests"
+  echo "  $0 IBM-200          Run only IBM mock tests"
   echo "  $0 cloud            Run all cloud mock tests"
   echo "  $0 --list           List all testable examples"
 }
