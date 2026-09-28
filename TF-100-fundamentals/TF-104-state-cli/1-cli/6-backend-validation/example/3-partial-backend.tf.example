@@ -1,0 +1,26 @@
+# Backend validation: a backend block WITHOUT the required "bucket"
+#
+# `terraform validate` says this is valid, and it's right: this is a
+# *partial configuration*. The missing values are supplied at init time:
+#
+#   terraform init -backend-config="bucket=my-terraform-state"
+#
+# Only `terraform init` can know whether they were supplied, so only
+# `terraform init` checks:
+#
+#   mkdir -p try && cp 3-partial-backend.tf.example try/main.tf
+#   terraform -chdir=try validate                # Success!
+#   terraform -chdir=try init -input=false
+#
+#   Error: Missing Required Value
+#     on main.tf line 21, in terraform:
+#     21:   backend "s3" {
+#   The attribute "bucket" is required by the backend.
+
+terraform {
+  backend "s3" {
+    key    = "terraform.tfstate"
+    region = "us-east-1"
+    # bucket: supplied with -backend-config
+  }
+}

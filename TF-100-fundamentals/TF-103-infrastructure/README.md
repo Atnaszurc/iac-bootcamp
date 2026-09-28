@@ -236,19 +236,33 @@ Terraform automatically manages the creation order:
 ```hcl
 resource "libvirt_network" "main" {
   name      = "terraform-network"
-  mode      = "nat"
-  domain    = "terraform.local"
-  addresses = ["10.0.0.0/16"]
-  
-  dhcp {
-    enabled = true
+  autostart = true
+
+  forward = {
+    mode = "nat" # omit forward entirely for an isolated network
   }
-  
-  dns {
-    enabled = true
+
+  domain = {
+    name = "terraform.local"
   }
+
+  dns = {
+    enable = "yes"
+  }
+
+  ips = [
+    {
+      address = "10.0.0.1" # the host's address on this network
+      prefix  = 24
+      dhcp = {
+        ranges = [{ start = "10.0.0.100", end = "10.0.0.200" }]
+      }
+    }
+  ]
 }
 ```
+
+> 💡 **libvirt provider 0.9.x uses nested attributes, not blocks.** Write `forward = { ... }`, not `forward { ... }`. And be careful with names: Terraform silently ignores unknown keys inside a nested attribute, so a typo like `dhcp_range` or `disk` (instead of `disks`) produces no error, just missing configuration.
 
 **Learn more**: [Section 1: Networks](./1-networks/README.md)
 
@@ -259,14 +273,37 @@ resource "libvirt_network" "main" {
 resource "libvirt_pool" "main" {
   name = "terraform-pool"
   type = "dir"
-  path = "/var/lib/libvirt/images/terraform"
+  target = {
+    path = "/var/lib/libvirt/images/terraform"
+  }
 }
 
+# Base image, downloaded once into the pool
+resource "libvirt_volume" "base" {
+  name = "ubuntu-22.04-base.qcow2"
+  pool = libvirt_pool.main.name
+  create = {
+    content = {
+      url = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+    }
+  }
+  target = {
+    format = { type = "qcow2" }
+  }
+}
+
+# VM disk: a copy-on-write clone of the base image
 resource "libvirt_volume" "vm_disk" {
-  name   = "vm-disk.qcow2"
-  pool   = libvirt_pool.main.name
-  format = "qcow2"
-  size   = 21474836480  # 20 GB in bytes
+  name     = "vm-disk.qcow2"
+  pool     = libvirt_pool.main.name
+  capacity = 21474836480 # 20 GB in bytes
+  backing_store = {
+    path   = libvirt_volume.base.path
+    format = { type = "qcow2" }
+  }
+  target = {
+    format = { type = "qcow2" }
+  }
 }
 ```
 
@@ -277,19 +314,68 @@ resource "libvirt_volume" "vm_disk" {
 #### Virtual Machines (Domains)
 ```hcl
 resource "libvirt_domain" "vm" {
-  name   = "terraform-vm"
-  memory = "2048"
-  vcpu   = 2
-  
-  disk {
-    volume_id = libvirt_volume.vm_disk.id
+  name        = "terraform-vm"
+  memory      = 2048
+  memory_unit = "MiB" # default unit is KiB!
+  vcpu        = 2
+  type        = "kvm"
+  running     = true # default is false: defined but not started
+
+  os = {
+    type         = "hvm"
+    type_arch    = "x86_64"
+    type_machine = "q35"
   }
-  
-  network_interface {
-    network_id = libvirt_network.main.id
+
+  devices = {
+    # Disks and networks are referenced by NAME, not ID
+    disks = [
+      {
+        source = {
+          volume = {
+            pool   = libvirt_volume.vm_disk.pool
+            volume = libvirt_volume.vm_disk.name
+          }
+        }
+        target = { dev = "vda", bus = "virtio" }
+        driver = { type = "qcow2" }
+      },
+      {
+        # cloud-init reads its configuration from this CD-ROM
+        device = "cdrom"
+        source = {
+          volume = {
+            pool   = libvirt_volume.cloudinit.pool
+            volume = libvirt_volume.cloudinit.name
+          }
+        }
+        target = { dev = "sda", bus = "sata" }
+      }
+    ]
+
+    interfaces = [
+      {
+        model = { type = "virtio" }
+        source = {
+          network = { network = libvirt_network.main.name }
+        }
+        wait_for_ip = { source = "lease" } # apply waits for a DHCP address
+      }
+    ]
   }
-  
-  cloudinit = libvirt_cloudinit_disk.init.id
+}
+```
+
+The VM's IP address comes from a data source, not from the domain itself:
+
+```hcl
+data "libvirt_domain_interface_addresses" "vm" {
+  domain = libvirt_domain.vm.name
+  source = "lease"
+}
+
+output "vm_ip" {
+  value = data.libvirt_domain_interface_addresses.vm.interfaces[0].addrs[0].addr
 }
 ```
 
@@ -322,14 +408,31 @@ runcmd:
 ```
 
 ```hcl
-data "template_file" "cloud_init" {
-  template = file("${path.module}/cloud-init.yaml")
-}
-
 resource "libvirt_cloudinit_disk" "init" {
   name      = "cloudinit.iso"
-  user_data = data.template_file.cloud_init.rendered
+  user_data = file("${path.module}/cloud-init.yaml")
+  meta_data = yamlencode({
+    instance-id    = "terraform-vm-01"
+    local-hostname = "terraform-vm-01"
+  })
 }
+
+# The ISO is created locally; upload it to the pool so the VM can mount it
+resource "libvirt_volume" "cloudinit" {
+  name = "cloudinit.iso"
+  pool = libvirt_pool.main.name
+  create = {
+    content = { url = libvirt_cloudinit_disk.init.path }
+  }
+}
+```
+
+Need variables in the cloud-init file? Use the built-in `templatefile()` function (the old `template_file` data source comes from an archived provider):
+
+```hcl
+user_data = templatefile("${path.module}/cloud-init.yaml.tftpl", {
+  hostname = "terraform-vm-01"
+})
 ```
 
 **Learn more**: [Section 3: Virtual Machines](./3-virtual-machines/README.md)
@@ -349,9 +452,17 @@ resource "libvirt_network" "main" {
 
 resource "libvirt_domain" "vm" {
   name = "my-vm"
-  
-  network_interface {
-    network_id = libvirt_network.main.id  # Implicit dependency
+  # ... memory, type, os and disks as in the full example above
+
+  devices = {
+    interfaces = [
+      {
+        model = { type = "virtio" }
+        source = {
+          network = { network = libvirt_network.main.name } # Implicit dependency
+        }
+      }
+    ]
   }
 }
 ```
@@ -394,12 +505,14 @@ resource "libvirt_domain" "vm" {
     
     # Ignore changes to specific attributes
     ignore_changes = [
-      disk,
-      network_interface
+      description,
+      devices
     ]
   }
 }
 ```
+
+> ⚠️ `create_before_destroy` on a VM only works if the replacement gets a **different name**: libvirt won't create a second domain with the same name while the old one exists. [TF-202 Section 2](../../TF-200-modules/TF-202-advanced-patterns/2-canary-deployments/README.md#task-6-roll-a-pool-in-place-with-create_before_destroy) shows how.
 
 **Common Lifecycle Options**:
 - `create_before_destroy` - Create replacement before destroying original
@@ -423,45 +536,96 @@ resource "libvirt_domain" "vm" {
 
 1. **Create Network**
 ```hcl
+terraform {
+  required_providers {
+    libvirt = {
+      source  = "dmacvicar/libvirt"
+      version = "~> 0.9"
+    }
+  }
+}
+
+provider "libvirt" {
+  uri = "qemu:///system"
+}
+
 resource "libvirt_network" "lab" {
   name      = "lab-network"
-  mode      = "nat"
-  addresses = ["192.168.100.0/24"]
-  dhcp {
-    enabled = true
-  }
+  autostart = true
+  forward   = { mode = "nat" }
+  ips = [
+    {
+      address = "192.168.100.1"
+      prefix  = 24
+      dhcp = {
+        ranges = [{ start = "192.168.100.100", end = "192.168.100.200" }]
+      }
+    }
+  ]
 }
 ```
 
 2. **Create Storage**
 ```hcl
 resource "libvirt_pool" "lab" {
-  name = "lab-pool"
-  type = "dir"
-  path = "/var/lib/libvirt/images/lab"
+  name   = "lab-pool"
+  type   = "dir"
+  target = { path = "/var/lib/libvirt/images/lab" }
+}
+
+resource "libvirt_volume" "base" {
+  name = "ubuntu-22.04-base.qcow2"
+  pool = libvirt_pool.lab.name
+  create = {
+    content = { url = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img" }
+  }
+  target = { format = { type = "qcow2" } }
 }
 
 resource "libvirt_volume" "lab_disk" {
-  name   = "lab-vm.qcow2"
-  pool   = libvirt_pool.lab.name
-  source = "/var/lib/libvirt/images/ubuntu-22.04-base.qcow2"
-  format = "qcow2"
+  name     = "lab-vm.qcow2"
+  pool     = libvirt_pool.lab.name
+  capacity = 10737418240 # 10 GB
+  backing_store = {
+    path   = libvirt_volume.base.path
+    format = { type = "qcow2" }
+  }
+  target = { format = { type = "qcow2" } }
 }
 ```
 
 3. **Deploy VM**
 ```hcl
 resource "libvirt_domain" "lab_vm" {
-  name   = "lab-vm"
-  memory = "2048"
-  vcpu   = 2
-  
-  disk {
-    volume_id = libvirt_volume.lab_disk.id
-  }
-  
-  network_interface {
-    network_id = libvirt_network.lab.id
+  name        = "lab-vm"
+  memory      = 2048
+  memory_unit = "MiB"
+  vcpu        = 2
+  type        = "kvm"
+  running     = true
+
+  os = { type = "hvm", type_arch = "x86_64", type_machine = "q35" }
+
+  devices = {
+    disks = [
+      {
+        source = {
+          volume = {
+            pool   = libvirt_volume.lab_disk.pool
+            volume = libvirt_volume.lab_disk.name
+          }
+        }
+        target = { dev = "vda", bus = "virtio" }
+        driver = { type = "qcow2" }
+      }
+    ]
+    interfaces = [
+      {
+        model       = { type = "virtio" }
+        source      = { network = { network = libvirt_network.lab.name } }
+        wait_for_ip = { source = "lease" }
+      }
+    ]
   }
 }
 ```
@@ -473,10 +637,10 @@ terraform plan
 terraform apply
 
 # Get VM IP
-virsh domifaddr lab-vm
+virsh -c qemu:///system domifaddr lab-vm
 
-# SSH to VM (if cloud-init configured)
-ssh student@<vm-ip>
+# Without cloud-init the image has no user you can log in with.
+# Lab 3 adds one.
 ```
 
 ---
@@ -493,31 +657,62 @@ variable "vm_count" {
   default = 3
 }
 
+# Reuses libvirt_pool.lab, libvirt_volume.base and libvirt_network.lab from Lab 1
+
 resource "libvirt_volume" "vm_disks" {
-  count  = var.vm_count
-  name   = "vm-${count.index + 1}.qcow2"
-  pool   = libvirt_pool.main.name
-  source = "/var/lib/libvirt/images/ubuntu-22.04-base.qcow2"
-  format = "qcow2"
+  count    = var.vm_count
+  name     = "vm-${count.index + 1}.qcow2"
+  pool     = libvirt_pool.lab.name
+  capacity = 10737418240
+  backing_store = {
+    path   = libvirt_volume.base.path
+    format = { type = "qcow2" }
+  }
+  target = { format = { type = "qcow2" } }
 }
 
 resource "libvirt_domain" "vms" {
-  count  = var.vm_count
-  name   = "terraform-vm-${count.index + 1}"
-  memory = "2048"
-  vcpu   = 2
-  
-  disk {
-    volume_id = libvirt_volume.vm_disks[count.index].id
-  }
-  
-  network_interface {
-    network_id = libvirt_network.main.id
+  count       = var.vm_count
+  name        = "terraform-vm-${count.index + 1}"
+  memory      = 1024
+  memory_unit = "MiB"
+  vcpu        = 1
+  type        = "kvm"
+  running     = true
+
+  os = { type = "hvm", type_arch = "x86_64", type_machine = "q35" }
+
+  devices = {
+    disks = [
+      {
+        source = {
+          volume = {
+            pool   = libvirt_volume.vm_disks[count.index].pool
+            volume = libvirt_volume.vm_disks[count.index].name
+          }
+        }
+        target = { dev = "vda", bus = "virtio" }
+        driver = { type = "qcow2" }
+      }
+    ]
+    interfaces = [
+      {
+        model       = { type = "virtio" }
+        source      = { network = { network = libvirt_network.lab.name } }
+        wait_for_ip = { source = "lease" }
+      }
+    ]
   }
 }
 
+data "libvirt_domain_interface_addresses" "vms" {
+  count  = var.vm_count
+  domain = libvirt_domain.vms[count.index].name
+  source = "lease"
+}
+
 output "vm_ips" {
-  value = [for vm in libvirt_domain.vms : vm.network_interface[0].addresses[0]]
+  value = [for d in data.libvirt_domain_interface_addresses.vms : d.interfaces[0].addrs[0].addr]
 }
 ```
 
@@ -531,7 +726,7 @@ output "vm_ips" {
 
 **Duration**: 25 minutes
 
-Create `cloud-init.yaml`:
+Create `cloud-init.yaml.tftpl` (the `.tftpl` extension marks it as a Terraform template):
 ```yaml
 #cloud-config
 hostname: ${hostname}
@@ -555,33 +750,70 @@ runcmd:
 
 Create `main.tf`:
 ```hcl
-data "template_file" "cloud_init" {
+resource "libvirt_cloudinit_disk" "init" {
   count = var.vm_count
-  
-  template = file("${path.module}/cloud-init.yaml")
-  
-  vars = {
+  name  = "cloudinit-${count.index}.iso"
+
+  # templatefile() is built in; the old template_file data source is archived
+  user_data = templatefile("${path.module}/cloud-init.yaml.tftpl", {
     hostname = "web-${count.index + 1}"
     username = "admin"
-    ssh_key  = file("~/.ssh/id_rsa.pub")
+    ssh_key  = trimspace(file(pathexpand("~/.ssh/id_ed25519.pub"))) # file() doesn't expand ~
+  })
+
+  meta_data = yamlencode({
+    instance-id    = "web-${count.index + 1}"
+    local-hostname = "web-${count.index + 1}"
+  })
+}
+
+# Upload each ISO to the pool so the VM can mount it
+resource "libvirt_volume" "cloudinit" {
+  count = var.vm_count
+  name  = "cloudinit-${count.index}.iso"
+  pool  = libvirt_pool.lab.name
+  create = {
+    content = { url = libvirt_cloudinit_disk.init[count.index].path }
   }
 }
 
-resource "libvirt_cloudinit_disk" "init" {
-  count     = var.vm_count
-  name      = "cloudinit-${count.index}.iso"
-  user_data = data.template_file.cloud_init[count.index].rendered
-}
-
 resource "libvirt_domain" "web_servers" {
-  count  = var.vm_count
-  name   = "web-${count.index + 1}"
-  memory = "2048"
-  vcpu   = 2
-  
-  cloudinit = libvirt_cloudinit_disk.init[count.index].id
-  
-  # ... rest of configuration
+  count = var.vm_count
+  name  = "web-${count.index + 1}"
+  # ... memory, memory_unit, vcpu, type, running, os as in Lab 2 ...
+
+  devices = {
+    disks = [
+      {
+        source = {
+          volume = {
+            pool   = libvirt_volume.vm_disks[count.index].pool
+            volume = libvirt_volume.vm_disks[count.index].name
+          }
+        }
+        target = { dev = "vda", bus = "virtio" }
+        driver = { type = "qcow2" }
+      },
+      {
+        # There is no cloudinit argument on the domain: attach the ISO as a CD-ROM
+        device = "cdrom"
+        source = {
+          volume = {
+            pool   = libvirt_volume.cloudinit[count.index].pool
+            volume = libvirt_volume.cloudinit[count.index].name
+          }
+        }
+        target = { dev = "sda", bus = "sata" }
+      }
+    ]
+    interfaces = [
+      {
+        model       = { type = "virtio" }
+        source      = { network = { network = libvirt_network.lab.name } }
+        wait_for_ip = { source = "lease" }
+      }
+    ]
+  }
 }
 ```
 
@@ -656,14 +888,32 @@ lsmod | grep kvm
 
 # 5. Test with minimal configuration
 resource "libvirt_domain" "test" {
-  name   = "test-vm"
-  memory = "512"  # Minimal memory
-  vcpu   = 1
-  
-  disk {
-    file = "/var/lib/libvirt/images/test.qcow2"
+  name        = "test-vm"
+  memory      = 512 # Minimal memory
+  memory_unit = "MiB"
+  vcpu        = 1
+  type        = "kvm"
+  running     = true
+
+  # Required by libvirt even though the provider marks it optional:
+  # without it the apply fails with "an os <type> must be specified"
+  os = { type = "hvm", type_arch = "x86_64", type_machine = "q35" }
+
+  devices = {
+    disks = [
+      {
+        source = { file = { file = "/var/lib/libvirt/images/test.qcow2" } }
+        target = { dev = "vda", bus = "virtio" }
+        driver = { type = "qcow2" }
+      }
+    ]
   }
 }
+
+# 6. Check what libvirt actually received. If a disk or NIC you configured
+#    is missing here, look for a misspelled key in devices: Terraform
+#    silently ignores unknown keys inside nested attributes.
+#    virsh -c qemu:///system dumpxml test-vm | grep -A3 -E "<disk|<interface"
 ```
 
 ---
@@ -784,22 +1034,34 @@ resource "libvirt_domain" "vm" {
   
   # Use KVM (hardware virtualization)
   type = "kvm"
+  os   = { type = "hvm", type_arch = "x86_64", type_machine = "q35" }
   
-  # Optimize CPU
+  # Optimize CPU: expose the host CPU's features to the guest
   vcpu = 2
-  cpu {
+  cpu = {
     mode = "host-passthrough"
   }
-  
-  # Use virtio for better performance
-  disk {
-    volume_id = libvirt_volume.disk.id
-    scsi      = false
-  }
-  
-  network_interface {
-    network_id = libvirt_network.main.id
-    model      = "virtio"
+
+  # Use virtio for better disk and network performance
+  devices = {
+    disks = [
+      {
+        source = {
+          volume = {
+            pool   = libvirt_volume.disk.pool
+            volume = libvirt_volume.disk.name
+          }
+        }
+        target = { dev = "vda", bus = "virtio" }
+        driver = { type = "qcow2" }
+      }
+    ]
+    interfaces = [
+      {
+        model  = { type = "virtio" }
+        source = { network = { network = libvirt_network.main.name } }
+      }
+    ]
   }
 }
 ```
@@ -915,7 +1177,7 @@ This lifecycle option ensures zero downtime during updates. Terraform creates th
 
 ### Question 5: Networking
 
-**What does "mode = nat" mean for a Libvirt network?**
+**What does `forward = { mode = "nat" }` mean for a Libvirt network?**
 
 A) Network is isolated with no external access  
 B) Network uses NAT to access external networks  

@@ -389,27 +389,31 @@ provider "local" {
 
 #### Provider with Configuration
 
+Most providers take settings in a `provider` block. The libvirt provider needs to know which libvirt daemon to talk to:
+
 ```hcl
 terraform {
   required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
+    libvirt = {
+      source  = "dmacvicar/libvirt"
+      version = "~> 0.9"
     }
   }
 }
 
-provider "aws" {
-  region = "us-east-1"
-  
-  default_tags {
-    tags = {
-      Environment = "Training"
-      ManagedBy   = "Terraform"
-    }
-  }
+# Your own machine
+provider "libvirt" {
+  uri = "qemu:///system"
+}
+
+# A second configuration of the same provider: a lab server over SSH
+provider "libvirt" {
+  alias = "labserver"
+  uri   = "qemu+ssh://student@labserver.local/system"
 }
 ```
+
+Resources use the default configuration unless they say otherwise with `provider = libvirt.labserver`.
 
 ### The Libvirt Provider (Our Focus)
 
@@ -420,7 +424,7 @@ terraform {
   required_providers {
     libvirt = {
       source  = "dmacvicar/libvirt"
-      version = "~> 0.7"
+      version = "~> 0.9"
     }
   }
 }

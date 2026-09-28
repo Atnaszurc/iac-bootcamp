@@ -233,6 +233,8 @@ terraform query -generate-config-out=imported.tf
 ```
 
 > **Note**: `terraform query` requires providers that implement list resources. It is covered in depth in **TF-307: Query & Actions** (TF-300 series).
+>
+> 📝 The Terraform 1.16 `query` reference page calls this flag `-generate-config`. Terraform 1.16 and 1.17 only accept `-generate-config-out`.
 
 ---
 
@@ -285,76 +287,105 @@ terraform {
 
 ### `terraform validate` — Backend Validation (1.15)
 
-Starting in **Terraform 1.15**, the `terraform validate` command now checks the `backend` block to ensure:
-- The backend type exists
-- All required attributes are present
-- The backend's own validation logic passes
-
-This catches backend configuration errors **before** running `terraform init`, which is especially useful in CI/CD pipelines.
-
-#### Example: Valid Backend
+Since **Terraform 1.15**, `terraform validate` checks the `backend` block too, without needing `terraform init`:
 
 ```hcl
 terraform {
-  backend "local" {
-    path = "terraform.tfstate"
+  backend "s4" { # typo: should be "s3"
+    bucket = "my-terraform-state"
+    key    = "terraform.tfstate"
+    region = "us-east-1"
   }
 }
 ```
+
+```bash
+terraform validate
+# Error: Unsupported backend type
+#   on main.tf line 2, in terraform:
+#    2:   backend "s4" { # typo: should be "s3"
+# There is no backend type named "s4".
+```
+
+It checks that the backend **type** exists and that there is only one `backend` block. It does **not** check the arguments inside the block: a backend block may be a *partial configuration*, with values such as `bucket` supplied later by `terraform init -backend-config=...`, and `validate` can't know about those. (1.15.0 did check the arguments; 1.15.1 removed that again because it broke `-backend-config` workflows.)
+
+So a missing `bucket`, a misspelt argument or a wrong type passes `validate` and is caught by `terraform init`, locally, before it contacts any storage:
 
 ```bash
 terraform validate
 # Success! The configuration is valid.
-```
-
-#### Example: Invalid Backend Type
-
-```hcl
-terraform {
-  backend "nonexistent" {
-    path = "terraform.tfstate"
-  }
-}
-```
-
-```bash
-terraform validate
-# Error: Invalid backend type
-#   on main.tf line 2, in terraform:
-#    2:   backend "nonexistent" {
-# Backend type "nonexistent" is not supported.
-```
-
-#### Example: Missing Required Attribute
-
-```hcl
-terraform {
-  backend "s3" {
-    key    = "terraform.tfstate"
-    region = "us-east-1"
-    # Missing required "bucket" attribute
-  }
-}
-```
-
-```bash
-terraform validate
-# Error: Missing required argument
+terraform init -input=false
+# Error: Missing Required Value
 #   on main.tf line 2, in terraform:
 #    2:   backend "s3" {
-# The argument "bucket" is required, but no definition was found.
+# The attribute "bucket" is required by the backend.
 ```
 
-#### Benefits
-
-1. **Early Error Detection**: Catch backend configuration errors before `terraform init`
-2. **CI/CD Integration**: Validate backend configuration in pipelines without initializing
-3. **Faster Feedback**: No need to wait for provider downloads to detect backend issues
-4. **Better Error Messages**: Clear indication of what's wrong with the backend configuration
-
-> **Deep dive**: See [`6-backend-validation/`](./6-backend-validation/) for comprehensive examples and hands-on exercises with backend validation.
+> **Deep dive**: See [`6-backend-validation/`](./6-backend-validation/) for a hands-on with every case, what gets checked where, and how to use it in CI. No cloud account needed.
 
 > **Deep dive**: See **TF-305 Section 2** for a full walkthrough of S3 backend configuration and the migration from DynamoDB locking to native S3 locking.
+
+---
+
+## 🆕 CLI Additions in Terraform 1.16
+
+| Command | What's new | Covered in |
+|---------|-----------|------------|
+| `terraform state show -json ADDRESS` | One resource from state as JSON | [Section 2: State](../2-state/README.md#task-4-show-a-specific-resource) |
+| `terraform workspace list -json` | Workspaces and the current one as JSON | [TF-305 Section 1](../../../TF-300-advanced/TF-305-workspaces-remote-state/1-workspaces/README.md#machine-readable-workspace-list-terraform-116) |
+| `terraform console -scope=module.NAME` | Evaluate expressions inside a child module | [Section 5: Console](../5-terraform-console/README.md#-evaluating-inside-a-child-module--scope-terraform-116) |
+
+---
+
+## 🧪 Beta: `terraform plan -minimal-refresh` (Terraform 1.17)
+
+> ⚠️ **Terraform 1.17 is in beta** (1.17.0-beta2 at the time of writing). Flags can still change before the final release. Terraform 1.16 rejects this flag: `flag provided but not defined: -minimal-refresh`.
+
+By default, every plan first **refreshes** every resource — one or more API calls each — to detect changes made outside Terraform. On large configurations that's most of the plan time.
+
+`-minimal-refresh` skips the refresh for resources whose configuration hasn't changed:
+
+1. Terraform compares configuration with the **prior state** (no API calls)
+2. Resources with **no planned change** are not refreshed
+3. Resources **with** a planned change are refreshed and planned again with fresh data
+
+### The Trade-Off: Drift Goes Unnoticed
+
+Try it with this section's example on Terraform 1.17:
+
+```bash
+cd example
+export TF_VAR_environment=dev
+terraform apply -auto-approve
+
+# Change a file behind Terraform's back
+echo "tampered" > dev_file1.txt
+
+terraform plan -minimal-refresh
+# No changes. Your infrastructure matches the configuration.   ← drift missed
+
+terraform plan
+#   # local_file.example_map["file1.txt"] will be created
+# Plan: 1 to add, 0 to change, 0 to destroy.                  ← drift found
+```
+
+### Rules
+
+| Combination | Result |
+|-------------|--------|
+| `-minimal-refresh` | Refresh only resources with planned changes |
+| `-minimal-refresh -refresh=false` | ❌ Error — mutually exclusive |
+| `-minimal-refresh -refresh-only` | ❌ Error — only valid in normal or destroy mode |
+
+### When to Use It
+
+| Use `-minimal-refresh` | Use a normal plan |
+|------------------------|-------------------|
+| Fast feedback while iterating on a large configuration | Before every `apply` to a shared environment |
+| Pull-request plans where only changed resources matter | Scheduled drift detection |
+| | Right after upgrading provider versions — Terraform needs a full refresh to populate new schema fields |
+
+Compared with `-refresh=false`, which skips refresh for **everything**, `-minimal-refresh` still refreshes what you're about to change, so the plan for those resources is based on real data.
 
 ## Testing Considerations
 

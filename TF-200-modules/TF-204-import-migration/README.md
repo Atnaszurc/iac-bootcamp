@@ -90,7 +90,51 @@ virsh net-dumpxml <network-name>
 virsh dumpxml <vm-name>
 ```
 
-### Step 2: Create Import Configuration
+No "manually created" resources to practise on? Create them with `virsh`:
+
+```bash
+cat > net.xml <<'EOF'
+<network>
+  <name>existing-network</name>
+  <forward mode="nat"/>
+  <ip address="10.17.3.1" prefix="24">
+    <dhcp><range start="10.17.3.100" end="10.17.3.200"/></dhcp>
+  </ip>
+</network>
+EOF
+
+cat > vm.xml <<'EOF'
+<domain type="kvm">
+  <name>existing-vm</name>
+  <memory unit="MiB">512</memory>
+  <vcpu>1</vcpu>
+  <os><type arch="x86_64" machine="q35">hvm</type></os>
+  <devices>
+    <interface type="network"><source network="existing-network"/><model type="virtio"/></interface>
+  </devices>
+</domain>
+EOF
+
+virsh -c qemu:///system net-define net.xml
+virsh -c qemu:///system net-start existing-network
+virsh -c qemu:///system net-autostart existing-network
+virsh -c qemu:///system define vm.xml
+```
+
+### Step 2: Find the Import IDs
+
+The libvirt provider imports networks and VMs **by UUID, not by name**. Importing by name fails with `Error: Network Not Found` or `Cannot import non-existent remote object`.
+
+```bash
+virsh -c qemu:///system net-uuid existing-network
+# f2fb5fad-b2f7-428b-b53b-8559c6fa9de1
+virsh -c qemu:///system domuuid existing-vm
+# 72f7d4ce-bf69-4643-940d-1494cb9d591b
+```
+
+Your UUIDs will be different.
+
+### Step 3: Write Import Blocks Only
 
 ```hcl
 # main.tf
@@ -98,7 +142,7 @@ terraform {
   required_providers {
     libvirt = {
       source  = "dmacvicar/libvirt"
-      version = "~> 0.7"
+      version = "~> 0.9"
     }
   }
 }
@@ -107,120 +151,108 @@ provider "libvirt" {
   uri = "qemu:///system"
 }
 
-# Import block for existing network
 import {
   to = libvirt_network.existing_network
-  id = "existing-network"  # Network name
+  id = "f2fb5fad-b2f7-428b-b53b-8559c6fa9de1" # virsh net-uuid existing-network
 }
 
-# Resource configuration (will be populated)
-resource "libvirt_network" "existing_network" {
-  name      = "existing-network"
-  mode      = "nat"
-  addresses = ["10.17.3.0/24"]
-  autostart = true
-  
-  dns {
-    enabled = true
-  }
-  
-  dhcp {
-    enabled = true
-  }
-}
-
-# Import block for existing VM
 import {
   to = libvirt_domain.existing_vm
-  id = "existing-vm"  # VM name
-}
-
-# Resource configuration
-resource "libvirt_domain" "existing_vm" {
-  name   = "existing-vm"
-  memory = 1024
-  vcpu   = 2
-  
-  # Network interface (will be discovered)
-  network_interface {
-    network_name = "existing-network"
-  }
-  
-  # Disk (will be discovered)
-  disk {
-    volume_id = "/var/lib/libvirt/images/existing-vm.qcow2"
-  }
+  id = "72f7d4ce-bf69-4643-940d-1494cb9d591b" # virsh domuuid existing-vm
 }
 ```
 
-### Step 3: Generate Configuration
+Don't write the `resource` blocks yourself. `-generate-config-out` only generates configuration for import targets that don't have a resource block yet.
+
+### Step 4: Generate Configuration
 
 ```bash
-# Generate configuration from existing resources
 terraform plan -generate-config-out=generated.tf
-
-# This creates generated.tf with actual resource configuration
+# Plan: 2 to import, 0 to add, 0 to change, 0 to destroy.
 ```
 
-### Step 4: Review Generated Configuration
+### Step 5: Review the Generated Configuration
+
+Open `generated.tf`. It's long: the VM alone is around 300 lines, because the provider writes out every attribute, most of them `= null`. Two things stand out.
+
+**1. The VM is very complete.** Memory, CPU model, controllers, the interface and its MAC address are all there. Terraform writes values exactly as libvirt reports them, so memory appears as `memory = 524288` and `memory_unit = "KiB"`, not the `512 MiB` you defined.
+
+**2. The network is suspiciously empty:**
 
 ```hcl
-# generated.tf (example output)
 resource "libvirt_network" "existing_network" {
-  addresses = ["10.17.3.0/24"]
   autostart = true
-  bridge    = "virbr1"
-  dhcp {
-    enabled = true
-  }
-  dns {
-    enabled    = true
-    local_only = false
-  }
-  mode = "nat"
-  name = "existing-network"
-}
-
-resource "libvirt_domain" "existing_vm" {
-  arch      = "x86_64"
-  autostart = false
-  disk {
-    scsi      = false
-    volume_id = "/var/lib/libvirt/images/existing-vm.qcow2"
-  }
-  machine = "pc-q35-7.2"
-  memory  = 1024
-  name    = "existing-vm"
-  network_interface {
-    addresses      = ["10.17.3.100"]
-    hostname       = "existing-vm"
-    network_name   = "existing-network"
-    wait_for_lease = false
-  }
-  vcpu = 2
+  forward   = null
+  ips       = null
+  name      = "existing-network"
+  # ... every other attribute = null
 }
 ```
 
-### Step 5: Import Resources
+The real network is NAT with DHCP, but the provider doesn't read `forward` and `ips` back on import. Configuration generation can only be as good as the provider's read. Always compare generated config with `virsh net-dumpxml`.
+
+### Step 6: Clean Up and Import
+
+Remove the noise, but keep every real value:
 
 ```bash
-# Plan to see what will be imported
-terraform plan
+grep -v '= null$' generated.tf > cleaned.tf && mv cleaned.tf generated.tf
+terraform fmt generated.tf
+# 443 lines -> 172 lines
+```
 
-# Apply to import into state
+Resist the urge to "tidy" the values themselves. Changing `memory = 524288` / `memory_unit = "KiB"` to `512` / `"MiB"` means the same thing to you, but Terraform sees a difference and plans an in-place update.
+
+```bash
 terraform apply
+# Apply complete! Resources: 2 imported, 0 added, 0 changed, 0 destroyed.
 
-# Verify import
-terraform state list
-terraform state show libvirt_network.existing_network
+terraform plan
+# No changes. Your infrastructure matches the configuration.
+```
+
+### Step 7: Document What the Provider Can't Read
+
+Now you'd like the configuration to say what the network really is. But add `forward` and `ips` and look at the plan:
+
+```
+  # libvirt_network.existing_network must be replaced
+      + forward   = { # forces replacement
+      + ips       = [ # forces replacement
+```
+
+Since libvirt provider 0.9.9, any network change except `autostart` replaces the network, and replacing a network cuts off every VM on it. Tell Terraform to describe these attributes but leave them alone:
+
+```hcl
+resource "libvirt_network" "existing_network" {
+  autostart = true
+  name      = "existing-network"
+
+  forward = { mode = "nat" }
+  ips = [{
+    address = "10.17.3.1"
+    prefix  = 24
+    dhcp    = { ranges = [{ start = "10.17.3.100", end = "10.17.3.200" }] }
+  }]
+
+  lifecycle {
+    ignore_changes = [forward, ips]
+  }
+}
+```
+
+```bash
+terraform plan
+# No changes. Your infrastructure matches the configuration.
 ```
 
 ### Key Takeaways
 
 - ✅ Import blocks are declarative and version-controlled
-- ✅ Configuration generation saves time
-- ✅ Always review generated config before applying
-- ✅ Import is idempotent (safe to re-run)
+- ✅ Check which ID the provider expects: libvirt wants UUIDs
+- ✅ Configuration generation saves time, but only shows what the provider reads back
+- ✅ Strip `= null` lines, keep the values exactly as generated
+- ✅ `ignore_changes` protects attributes that would force a destructive replacement
 - ✅ Import blocks can stay in code as documentation
 
 ---
@@ -248,22 +280,18 @@ Use the terraform import CLI command for legacy workflows.
 # main.tf
 resource "libvirt_network" "imported" {
   name      = "legacy-network"
-  mode      = "nat"
-  addresses = ["10.20.0.0/24"]
+  autostart = true
 }
 ```
 
 #### 2. Import Using CLI
 
 ```bash
-# Import network
-terraform import libvirt_network.imported legacy-network
+# libvirt imports use UUIDs, not names
+terraform import libvirt_network.imported "$(virsh -c qemu:///system net-uuid legacy-network)"
 
 # Import VM
-terraform import libvirt_domain.imported legacy-vm
-
-# Import storage pool
-terraform import libvirt_pool.imported legacy-pool
+terraform import libvirt_domain.imported "$(virsh -c qemu:///system domuuid legacy-vm)"
 ```
 
 #### 3. Verify and Adjust
@@ -289,7 +317,8 @@ networks=("web-network" "app-network" "db-network")
 
 for net in "${networks[@]}"; do
   echo "Importing network: $net"
-  terraform import "libvirt_network.networks[\"$net\"]" "$net"
+  uuid=$(virsh -c qemu:///system net-uuid "$net")
+  terraform import "libvirt_network.networks[\"$net\"]" "$uuid"
 done
 ```
 
@@ -689,19 +718,11 @@ Option 2: Blue-Green
 ```hcl
 # Define resources to import
 locals {
+  # name => UUID (virsh -c qemu:///system net-uuid <name>)
   networks_to_import = {
-    "web-network" = {
-      mode      = "nat"
-      addresses = ["10.10.0.0/24"]
-    }
-    "app-network" = {
-      mode      = "nat"
-      addresses = ["10.20.0.0/24"]
-    }
-    "db-network" = {
-      mode      = "nat"
-      addresses = ["10.30.0.0/24"]
-    }
+    "web-network" = "3b1c9a50-6f0e-4b7e-9d52-1f1a2b3c4d01"
+    "app-network" = "3b1c9a50-6f0e-4b7e-9d52-1f1a2b3c4d02"
+    "db-network"  = "3b1c9a50-6f0e-4b7e-9d52-1f1a2b3c4d03"
   }
 }
 
@@ -709,67 +730,88 @@ locals {
 import {
   for_each = local.networks_to_import
   to       = libvirt_network.networks[each.key]
-  id       = each.key
+  id       = each.value # libvirt imports by UUID
 }
 
 # Resource configuration
 resource "libvirt_network" "networks" {
   for_each = local.networks_to_import
-  
+
   name      = each.key
-  mode      = each.value.mode
-  addresses = each.value.addresses
   autostart = true
-  
-  dns {
-    enabled = true
-  }
-  
-  dhcp {
-    enabled = true
-  }
+
+  # forward/ips aren't read back on import; see Lab 1, Step 7
 }
+```
+
+Collect the UUIDs with a loop instead of copying them by hand:
+
+```bash
+for n in web-network app-network db-network; do
+  echo "\"$n\" = \"$(virsh -c qemu:///system net-uuid $n)\""
+done
 ```
 
 ### Technique 2: Import with Data Sources
 
-```hcl
-# Discover existing resources
-data "external" "existing_networks" {
-  program = ["bash", "-c", "virsh net-list --name | jq -R -s -c 'split(\"\n\")[:-1]'"]
-}
+Let a script find the networks, so new ones are picked up automatically. The `external` data source runs a program that must print a JSON **object of strings**, so the script prints `{"<name>": "<uuid>", ...}`:
 
-locals {
-  network_names = jsondecode(data.external.existing_networks.result)
+```bash
+#!/usr/bin/env bash
+# list-networks.sh: every libvirt network except "default" as {"<name>": "<uuid>"}
+set -euo pipefail
+
+for uuid in $(virsh -c qemu:///system net-list --all --uuid); do
+  name=$(virsh -c qemu:///system net-name "$uuid")
+  [ "$name" = "default" ] && continue
+  jq -n --arg k "$name" --arg v "$uuid" '{($k): $v}'
+done | jq -s 'add // {}'
+```
+
+```hcl
+# Discover existing networks (requires the hashicorp/external provider)
+data "external" "existing_networks" {
+  program = ["bash", "${path.module}/list-networks.sh"]
 }
 
 # Import discovered resources
 import {
-  for_each = toset(local.network_names)
+  for_each = data.external.existing_networks.result
   to       = libvirt_network.discovered[each.key]
-  id       = each.value
+  id       = each.value # UUID
+}
+
+resource "libvirt_network" "discovered" {
+  for_each = data.external.existing_networks.result
+
+  name      = each.key
+  autostart = false
 }
 ```
 
 ### Technique 3: Validation After Import
 
+The libvirt provider has no network or domain data source to compare against, but you can check that an imported VM actually got an address on the network you expect:
+
 ```hcl
-# Check that imported resources match configuration
-check "import_validation" {
-  data "libvirt_network" "verify" {
-    for_each = libvirt_network.networks
-    name     = each.value.name
+check "imported_vm_is_reachable" {
+  data "libvirt_domain_interface_addresses" "vm" {
+    domain = libvirt_domain.existing_vm.name
+    source = "lease"
   }
-  
+
   assert {
-    condition = alltrue([
-      for name, net in data.libvirt_network.verify :
-      net.addresses[0] == libvirt_network.networks[name].addresses[0]
+    condition = anytrue([
+      for i in data.libvirt_domain_interface_addresses.vm.interfaces : anytrue([
+        for a in i.addrs : cidrhost("10.17.3.0/24", 0) == cidrhost("${a.addr}/24", 0)
+      ])
     ])
-    error_message = "Imported network configuration mismatch"
+    error_message = "existing-vm has no DHCP lease on 10.17.3.0/24. Is it running, and on the right network?"
   }
 }
 ```
+
+A `check` block only produces a warning, so the import itself still succeeds. In the Lab 1 setup the VM is defined but not started, so you'll see this warning until you run `virsh start existing-vm`.
 
 ---
 
@@ -867,7 +909,7 @@ Extend your TF-204 knowledge with these additional topics:
 | Section | Topic | Description |
 |---------|-------|-------------|
 | [removed-blocks/](removed-blocks/README.md) | `removed` Blocks (Terraform 1.7+) | Declaratively remove resources from state without destroying them |
-| [identity-import/](identity-import/README.md) | Identity-Based Import (Terraform 1.12+) | Import using structured identity attributes instead of string IDs |
+| [identity-import/](identity-import/README.md) | Identity-Based Import (Terraform 1.12+) | Import using structured identity attributes instead of string IDs; hands-on with the AWS provider against Moto (needs Docker) |
 
 ---
 

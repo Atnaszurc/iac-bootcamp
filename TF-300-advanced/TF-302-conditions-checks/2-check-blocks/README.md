@@ -2,441 +2,226 @@
 
 ## Introduction
 
-Terraform 1.5 introduced Check blocks with Assertions, allowing for custom validations outside the usual resource lifecycle. These checks run at the end of plan and apply stages, providing an additional layer of verification for your infrastructure.
+Terraform 1.5 introduced `check` blocks: assertions that live outside any single resource and run at the end of **every** plan and apply. Unlike [preconditions and postconditions](../1-pre-postconditions/README.md), a failing check doesn't stop anything. It prints a warning and Terraform carries on.
+
+That makes checks the tool for questions like "is the website up?", "is the host running out of room?" or "does a certificate expire soon?": things worth hearing about on every run, but not worth blocking a deployment for.
+
+**Example**: [`example/`](./example/) — a libvirt VM running nginx and the checks from this lesson, verified on a real libvirt host, with 4 tests that run without libvirt (`terraform test`).
 
 ## Table of Contents
 - [Basic Structure](#basic-structure)
-- [Example: Checking Azure Storage Account Encryption](#example-checking-azure-storage-account-encryption)
-- [Example: Verifying Azure Virtual Network Peering](#example-verifying-azure-virtual-network-peering)
-- [Example: Checking Azure Key Vault Access Policy](#example-checking-azure-key-vault-access-policy)
+- [Example: Is the Website Up?](#example-is-the-website-up)
+- [Example: Host Headroom](#example-host-headroom)
+- [Checks vs Conditions](#checks-vs-conditions)
 - [Best Practices](#best-practices)
-- [Tasks](#tasks)
-- [Task 1: Azure App Service Plan Tier Verification](#task-1-azure-app-service-plan-tier-verification)
-- [Task 2: Azure SQL Database Backup Retention](#task-2-azure-sql-database-backup-retention)
-- [Task 3: Azure Virtual Network Subnet Configuration](#task-3-azure-virtual-network-subnet-configuration)
-- [Task 4: Azure Kubernetes Service (AKS) Node Pool Verification](#task-4-azure-kubernetes-service-aks-node-pool-verification)
-- [Task 5: Azure Front Door WAF Policy](#task-5-azure-front-door-waf-policy)
-- [Bonus Task: Azure Monitor Alert Rule](#bonus-task-azure-monitor-alert-rule)
+- [Task 1: Web Health Check](#task-1-web-health-check)
+- [Task 2: Host Headroom](#task-2-host-headroom)
+- [Task 3: Check or Precondition?](#task-3-check-or-precondition)
+- [Task 4: Checks and Drift](#task-4-checks-and-drift)
+- [Task 5: Testing Checks](#task-5-testing-checks)
+- [Bonus Task: Certificate Expiry](#bonus-task-certificate-expiry)
 
 ## Basic Structure
 
-A Check block in Terraform follows this structure:
 ```hcl
 check "name_of_check" {
-    assert {
-        condition = <boolean_expression>
-        error_message = "Error message if condition is false"
-    }   
+  # Optional: one scoped data source
+  data "<type>" "<name>" {
+    # ...
+  }
+
+  # One or more assertions
+  assert {
+    condition     = <boolean expression>
+    error_message = "Message shown as a warning if the condition is false"
+  }
 }
 ```
 
+A check can have **one scoped data source**. It is read as part of the check, and if reading it fails (a timeout, a connection refused), that becomes a warning too instead of an error.
 
-## Example: Checking Azure Storage Account Encryption
-```hcl
-data "azurerm_storage_account" "example" {
-    name = azurerm_storage_account.example.name
-    resource_group_name = azurerm_resource_group.example.name
-}
-check "storage_encryption" {
-    assert {
-        condition = data.azurerm_storage_account.example.infrastructure_encryption_enabled
-        error_message = "Infrastructure encryption must be enabled on the storage account."
-    }
-}
-```
+## Example: Is the Website Up?
 
-This check ensures that infrastructure encryption is enabled on the storage account after it's created.
-
-## Example: Verifying Azure Virtual Network Peering
+The example VM installs nginx through cloud-init and gets a fixed address from a DHCP host entry. This check calls it with the `hashicorp/http` provider:
 
 ```hcl
-data "azurerm_virtual_network" "vnet1" {
-    name = azurerm_virtual_network.vnet1.name
-    resource_group_name = azurerm_resource_group.example.name
-}
-data "azurerm_virtual_network" "vnet2" {
-    name = azurerm_virtual_network.vnet2.name
-    resource_group_name = azurerm_resource_group.example.name
-}
-check "vnet_peering" {
-    assert {
-        condition = length(data.azurerm_virtual_network.vnet1.vnet_peerings) > 0 && length(data.azurerm_virtual_network.vnet2.vnet_peerings) > 0
-        error_message = "Virtual network peering should be established between vnet1 and vnet2."
-    }
+check "web_health" {
+  data "http" "home" {
+    url = "http://${local.vm_ip}/"
+    retry { attempts = 2 }
+    depends_on = [libvirt_domain.web]
+  }
+
+  assert {
+    condition     = data.http.home.status_code == 200
+    error_message = "http://${local.vm_ip}/ returned ${data.http.home.status_code}, expected 200."
+  }
+
+  assert {
+    condition     = strcontains(data.http.home.response_body, var.vm_name)
+    error_message = "The page doesn't mention ${var.vm_name}: is this the right server?"
+  }
 }
 ```
 
-This check verifies that peering is established between two virtual networks.
+On the first `terraform apply` the VM exists, but cloud-init is still installing nginx:
 
-## Example: Checking Azure Key Vault Access Policy
+```
+Warning: Error making request
+  GET http://10.160.0.10/ giving up after 3 attempt(s)
+
+Apply complete! Resources: 7 added, 0 changed, 0 destroyed.
+```
+
+The apply succeeds with a warning. A minute later, `terraform plan` runs the check again and it passes.
+
+## Example: Host Headroom
+
 ```hcl
-data "azurerm_client_config" "current" {}
-check "key_vault_access" {
-    assert {
-        condition = contains([
-        for policy in azurerm_key_vault.example.access_policy : policy.object_id
-        ], data.azurerm_client_config.current.object_id)
-        error_message = "Current user must have an access policy in the Key Vault."
-    }
+data "libvirt_node_info" "host" {}
+
+check "host_memory_headroom" {
+  assert {
+    condition     = data.libvirt_node_info.host.memory_total_kb / 1024 - var.memory_mb >= var.min_host_headroom_mb
+    error_message = "After this VM, the host has less than ${var.min_host_headroom_mb} MiB left for other VMs."
+  }
 }
 ```
 
+A check doesn't need its own data source: it can use anything in the configuration.
 
-This check ensures that the current user has an access policy in the created Key Vault.
+## Checks vs Conditions
+
+| | Variable `validation` | `precondition` / `postcondition` | `check` |
+|---|---|---|---|
+| Attached to | A variable | A resource, data source or output | Nothing: stands alone |
+| On failure | Error: stops the run | Error: stops the run | **Warning**: run continues |
+| Runs | Plan | Plan and/or apply | End of every plan and apply |
+| Use for | Bad input | Assumptions a resource depends on | Ongoing health and hygiene |
 
 ## Best Practices
 
-1. Use Check blocks for validations that span multiple resources or require complex logic.
-2. Provide clear and informative error messages.
-3. Consider using data sources to fetch the latest state of resources for accurate checks.
-4. Group related assertions within a single Check block.
+1. Use checks for things you want to *know*, conditions for things that must *stop* the run.
+2. Put slow or flaky lookups (HTTP calls, APIs) in a scoped data source, so a timeout warns instead of failing the plan.
+3. Include the actual value in the message: `returned ${data.http.home.status_code}`.
+4. Read warnings. A check nobody looks at is decoration; in CI, consider failing the pipeline on check warnings.
 
-## Tasks
+## Task 1: Web Health Check
 
-## Task 1: Azure App Service Plan Tier Verification
+Add the `web_health` check from [the example above](#example-is-the-website-up) and apply. Watch it warn during the first apply, then run `terraform plan` a minute later.
 
-Create a Check block that verifies the tier of an Azure App Service Plan:
+Then try the second assertion: change the page by setting a different `runcmd` in cloud-init, replace the VM (`terraform apply -replace=libvirt_domain.web`), and see which assertion fires.
 
-- If the environment is "production", ensure the App Service Plan is using at least a "PremiumV2" tier.
-- For non-production environments, ensure it's at least "Standard" tier.
+## Task 2: Host Headroom
 
-### Example:
-```hcl
-variable "environment" {
-    type = string
-    default = "development"
-}
-resource "azurerm_service_plan" "example" {
-    name = "example-app-service-plan"
-    resource_group_name = data.azurerm_resource_group.example.name
-    location = data.azurerm_resource_group.example.location
-    os_type = "Windows"
-    sku_name = var.environment == "production" ? "P1v2" : "S1"
-}
-check "app_service_plan_tier" {
-    assert {
-        condition = var.environment == "production" ? contains(["P1v2", "P2v2", "P3v2"], azurerm_service_plan.example.sku_name) : startswith(azurerm_service_plan.example.sku_name, "S")
-        error_message = "App Service Plan must use at least PremiumV2 tier for production, and at least Standard tier for non-production environments."
-    }
-}
+Add the `host_memory_headroom` check, then run:
+
+```bash
+terraform plan -var memory_mb=16384 -var min_host_headroom_mb=65536
 ```
 
-## Task 2: Azure SQL Database Backup Retention
+The plan shows the warning, but still plans the VM.
 
-Implement a Check block that validates the backup retention policy of an Azure SQL Database:
+## Task 3: Check or Precondition?
 
-- For production databases, ensure the retention period is at least 35 days.
-- For non-production databases, ensure it's at least 7 days.
+Move the headroom rule into a `precondition` on `libvirt_domain.web` and run the same plan. What changes? Which one would you want:
+- on a shared lab server, where other people's VMs need room?
+- on your own laptop, where you know what you're doing?
 
-### Example:
-```hcl
-variable "environment" {
-    type = string
-    validation {
-        condition = contains(["production", "development", "staging"], var.environment)
-        error_message = "Environment must be 'production', 'development', or 'staging'."
-    }
-}
-resource "azurerm_mssql_server" "example" {
-    name = "example-sqlserver"
-    resource_group_name = data.azurerm_resource_group.example.name
-    location = data.azurerm_resource_group.example.location
-    version = "12.0"
-    administrator_login = "sqladmin"
-    administrator_login_password = "P@ssw0rd1234!"
-}
-resource "azurerm_mssql_database" "example" {
-    name = "example-database"
-    server_id = azurerm_mssql_server.example.id
-    license_type   = "LicenseIncluded"
-    short_term_retention_policy {
-        retention_days = var.environment == "production" ? 35 : 7
-    }
-}
-check "sql_database_backup_retention" {
-    assert {
-        condition = (
-        var.environment == "production" && azurerm_mssql_database.example.short_term_retention_policy[0].retention_days >= 35
-        ) || (
-        var.environment != "production" && azurerm_mssql_database.example.short_term_retention_policy[0].retention_days >= 7
-        )
-        error_message = format(
-            "Invalid backup retention period for %s environment. Production requires at least 35 days, non-production at least 7 days. Current setting: %d days.",
-            var.environment,
-            azurerm_mssql_database.example.short_term_retention_policy[0].retention_days
-        )
-    }
-}
+There's no single right answer, which is exactly why Terraform has both.
+
+## Task 4: Checks and Drift
+
+With the example applied, stop the VM behind Terraform's back and plan:
+
+```bash
+virsh -c qemu:///system destroy tf302-web
+terraform plan
 ```
 
-## Task 3: Azure Virtual Network Subnet Configuration
+```
+  # libvirt_domain.web will be updated in-place
+      ~ running     = false -> true
 
-Create a Check block that verifies the configuration of subnets in an Azure Virtual Network:
-
-- Ensure there are at least 3 subnets.
-- Verify that one subnet is designated for Azure Bastion (name contains "AzureBastionSubnet").
-
-### Example:
-```hcl
-resource "azurerm_virtual_network" "example" {
-    name = "example-vnet"
-    address_space = ["10.0.0.0/16"]
-    location = data.azurerm_resource_group.example.location
-    resource_group_name = data.azurerm_resource_group.example.name
-    subnet {
-        name = "subnet1"
-        address_prefixes = ["10.0.1.0/24"]  
-    }
-    subnet {
-        name = "subnet2"
-        address_prefixes = ["10.0.2.0/24"]
-    }
-    subnet {
-        name = "AzureBastionSubnet"
-        address_prefixes = ["10.0.3.0/24"]
-    }
-}
-check "vnet_subnet_configuration" {
-    assert {
-        condition = length(azurerm_virtual_network.example.subnet) >= 3
-        error_message = "The virtual network must have at least 3 subnets."
-    }
-    assert {
-        condition = anytrue([for s in azurerm_virtual_network.example.subnet : contains(["AzureBastionSubnet"], s.name)])
-        error_message = "One subnet must be designated for Azure Bastion (name should contain 'AzureBastionSubnet')."
-    }
-}
+Warning: Check block assertion known after apply
 ```
 
-## Task 4: Azure Kubernetes Service (AKS) Node Pool Verification
+Terraform notices the VM isn't running (drift) and plans to start it. The web check *doesn't* warn about the site being down: its data source depends on the VM, which has a pending change, so the check is deferred until after apply. Run `terraform apply` and watch it warn while nginx starts again.
 
-Implement a Check block for an AKS cluster:
+## Task 5: Testing Checks
 
-- Ensure there's at least one system node pool and one user node pool.
-- Verify that the system node pool has at least 3 nodes.
+Look at `example/tests/checks.tftest.hcl`. Two rules about checks in `terraform test`:
 
-### Example:
+1. A failing check **fails the test run**, unless the run lists it: `expect_failures = [check.web_health]`.
+2. A check still *known after apply* at the end of a `plan` run also fails it. The web check reads from the VM, so the tests use `command = apply`, which is safe because both providers are mocked.
+
+`override_data` replaces the HTTP response, so the tests can simulate a healthy server, a `502`, and the wrong server answering:
+
 ```hcl
-resource "azurerm_kubernetes_cluster" "example" {
-    name = "example-aks"
-    location = data.azurerm_resource_group.example.location
-    resource_group_name = data.azurerm_resource_group.example.name
-    dns_prefix = "exampleaks"
-    default_node_pool {
-        name = "system"
-        node_count = 3
-        vm_size = "Standard_DS2_v2"
-        type = "VirtualMachineScaleSets"
-        mode = "System"
+run "web_server_unhealthy" {
+  command = apply
+
+  override_data {
+    target = data.http.home # a data source inside a check keeps its normal address
+    values = {
+      status_code   = 502
+      response_body = "Bad Gateway"
     }
-    identity {
-        type = "SystemAssigned"
-    }
-}
-resource "azurerm_kubernetes_cluster_node_pool" "user" {
-    name = "user"
-    kubernetes_cluster_id = azurerm_kubernetes_cluster.example.id
-    vm_size = "Standard_DS2_v2"
-    node_count = 2
-    mode = "User"
-}
-check "aks_node_pool_verification" {
-    assert {
-        condition = (
-        length([for np in azurerm_kubernetes_cluster.example.default_node_pool : np if np.mode == "System"]) > 0 &&
-        length([for np in [azurerm_kubernetes_cluster_node_pool.user] : np if np.mode == "User"]) > 0
-        )
-        error_message = "AKS cluster must have at least one system node pool and one user node pool."
-    }
-    assert {
-        condition = (
-        [for np in azurerm_kubernetes_cluster.example.default_node_pool : np.node_count if np.mode == "System"][0] >= 3
-        )
-        error_message = "The system node pool must have at least 3 nodes."
-    }
-}
-```
-
-## Task 5: Azure Front Door WAF Policy
-
-Create a Check block for an Azure Front Door WAF policy:
-
-- Ensure that the policy is in "Prevention" mode for production environments.
-- Verify that at least one custom rule is configured.
-
-### Example:
-```hcl
-variable "environment" {
-    type = string
-    default = "development"
-}
-resource "azurerm_frontdoor_firewall_policy" "example" {
-    name = "examplewafpolicy"
-    resource_group_name = data.azurerm_resource_group.example.name
-    mode = var.environment == "production" ? "Prevention" : "Detection"
-    managed_rule {
-        type = "DefaultRuleSet"
-        version = "1.0"
-    }
-    custom_rule {
-        name = "Rule1"
-        type = "MatchRule"
-        action = "Block"
-        priority = 1
-        match_condition {
-            match_variable = "RemoteAddr"
-            operator = "IPMatch"
-            negation_condition = false
-            match_values = ["192.168.1.0/24", "10.0.0.0/24"]
-        }
-    }
-}
-check "waf_policy_configuration" {
-    assert {
-        condition = var.environment != "production" || azurerm_frontdoor_firewall_policy.example.mode == "Prevention"
-        error_message = "WAF policy must be in Prevention mode for production environments."
-    }
-    assert {
-        condition = length(azurerm_frontdoor_firewall_policy.example.custom_rule) > 0
-        error_message = "At least one custom rule must be configured for the WAF policy."
-    }
-}
-```
-
-## Bonus Task: Azure Monitor Alert Rule
-
-Implement a complex Check block for Azure Monitor Alert Rules:
-
-- Verify that there's at least one alert rule for each of these categories: CPU usage, memory usage, and disk space.
-- Ensure that all alert rules have an action group associated with them.
-
-### Example:
-```hcl
-resource "azurerm_virtual_network" "example" {
-  name                = "example-network"
-  address_space       = ["10.0.0.0/16"]
-  location            = data.azurerm_resource_group.example.location
-  resource_group_name = data.azurerm_resource_group.example.name
-}
-
-resource "azurerm_subnet" "example" {
-  name                 = "internal"
-  resource_group_name  = data.azurerm_resource_group.example.name
-  virtual_network_name = azurerm_virtual_network.example.name
-  address_prefixes     = ["10.0.2.0/24"]
-}
-
-resource "azurerm_network_interface" "example" {
-  name                = "example-nic"
-  location            = data.azurerm_resource_group.example.location
-  resource_group_name = data.azurerm_resource_group.example.name
-
-  ip_configuration {
-    name                          = "internal"
-    subnet_id                     = azurerm_subnet.example.id
-    private_ip_address_allocation = "Dynamic"
-  }
-}
-resource "azurerm_linux_virtual_machine" "example" {
-  name                = "example-vm"
-  resource_group_name = data.azurerm_resource_group.example.name
-  location            = data.azurerm_resource_group.example.location
-  size                = "Standard_F2s_v2"
-  admin_username      = "ubuntu"
-  network_interface_ids = [
-    azurerm_network_interface.example.id,
-  ]
-  admin_ssh_key {
-    username   = "ubuntu"
-    public_key = "<your-public-ssh-key>"
   }
 
-  os_disk {
-    caching              = "ReadWrite"
-    storage_account_type = "Standard_LRS"
-  }
-  source_image_reference {
-    publisher = "Canonical"
-    offer     = "0001-com-ubuntu-server-jammy"
-    sku       = "22_04-lts"
-    version   = "latest"
-  }
-}
-resource "azurerm_monitor_action_group" "example" {
-    name = "example-actiongroup"
-    resource_group_name = data.azurerm_resource_group.example.name
-    short_name = "exampleag"
-    email_receiver {
-        name = "sendtoadmin"
-        email_address = "admin@example.com"
-}
-}
-resource "azurerm_monitor_metric_alert" "cpu_alert" {
-    name = "example-cpu-alert"
-    resource_group_name = data.azurerm_resource_group.example.name
-    scopes = [azurerm_linux_virtual_machine.example.id]
-    criteria {
-        metric_namespace = "Microsoft.Compute/virtualMachines"
-        metric_name = "Percentage CPU"
-        aggregation = "Average"
-        operator = "GreaterThan"
-        threshold = 80
-    }
-    action {
-        action_group_id = azurerm_monitor_action_group.example.id
-    }
-}
-resource "azurerm_monitor_metric_alert" "memory_alert" {
-    name = "examplememoryalert"
-    resource_group_name = data.azurerm_resource_group.example.name
-    scopes = [azurerm_linux_virtual_machine.example.id]
-    criteria {
-        metric_namespace = "Microsoft.Compute/virtualMachines"
-        metric_name = "Available Memory Bytes"
-        aggregation = "Average"
-        operator = "LessThan"
-        threshold = 1073741824 # 1 GB in bytes
-    }
-    action {
-        action_group_id = azurerm_monitor_action_group.example.id
-    }
-}
-resource "azurerm_monitor_metric_alert" "disk_alert" {
-    name = "example-disk-alert"
-    resource_group_name = data.azurerm_resource_group.example.name
-    scopes = [azurerm_linux_virtual_machine.example.id]
-    criteria {
-        metric_namespace = "Microsoft.Compute/virtualMachines"
-        metric_name = "Disk Read Bytes"
-        aggregation = "Total"
-        operator = "GreaterThan"
-        threshold = 5000000000 # 5 GB in bytes
-    }
-    action {
-        action_group_id = azurerm_monitor_action_group.example.id
-    }
-}
-check "monitor_alert_rules" {
-    assert {
-        condition = length([
-        for alert in [
-        azurerm_monitor_metric_alert.cpu_alert,
-        azurerm_monitor_metric_alert.memory_alert,
-            azurerm_monitor_metric_alert.disk_alert
-        ] : alert if contains(["Percentage CPU", "Available Memory Bytes", "Disk Read Bytes"], alert.criteria[0].metric_name)
-        ]) == 3
-        error_message = "There must be at least one alert rule for each category: CPU usage, memory usage, and disk space."
-    }
-    assert {
-        condition = length([
-            for alert in [
-                azurerm_monitor_metric_alert.cpu_alert,
-                azurerm_monitor_metric_alert.memory_alert,
-                azurerm_monitor_metric_alert.disk_alert
-            ] : alert if length(alert.action) > 0
-        ]) == 3
-        error_message = "All alert rules must have an action group associated with them."
-    }
+  expect_failures = [check.web_health]
 }
 ```
-Remember to use appropriate error messages that clearly explain why a check failed and what the correct configuration should be.
+
+> ⚠️ Don't use `plan_options { target = [...] }` to narrow a check test down. Checks outside the target are *skipped*, so a test that expects a check to pass would pass without the check ever running.
+
+## Bonus Task: Certificate Expiry
+
+Generate a self-signed certificate with the `hashicorp/tls` provider and warn when it expires within 30 days. `provider::time::rfc3339_parse()` (see [TF-301 Section 2](../../TF-301-validation/2-advanced-functions/README.md)) turns the timestamps into numbers you can compare.
+
+### Example
+```hcl
+terraform {
+  required_providers {
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.13"
+    }
+  }
+}
+
+resource "tls_private_key" "web" {
+  algorithm = "ED25519"
+}
+
+resource "tls_self_signed_cert" "web" {
+  private_key_pem       = tls_private_key.web.private_key_pem
+  validity_period_hours = var.cert_valid_hours
+  allowed_uses          = ["server_auth"]
+  subject {
+    common_name = "tf302-web"
+  }
+}
+
+check "certificate_not_expiring" {
+  assert {
+    condition = (
+      provider::time::rfc3339_parse(tls_self_signed_cert.web.validity_end_time).unix -
+      provider::time::rfc3339_parse(plantimestamp()).unix
+    ) > 30 * 86400
+    error_message = "The web certificate expires on ${tls_self_signed_cert.web.validity_end_time}, less than 30 days from now."
+  }
+}
+```
+
+```bash
+terraform apply -var cert_valid_hours=240
+# Warning: Check block assertion failed
+#   The web certificate expires on 2026-10-08T15:03:20+02:00, less than 30 days from now.
+```
+
+This is the classic use of a check: nothing is broken *yet*, but someone should renew that certificate.

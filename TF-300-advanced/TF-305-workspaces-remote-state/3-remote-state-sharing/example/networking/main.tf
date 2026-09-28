@@ -18,7 +18,7 @@ terraform {
 
 # Simulate a network resource using local_file (no Libvirt required for this demo)
 resource "local_file" "network_config" {
-  content = <<-EOT
+  content  = <<-EOT
     # Simulated Network Configuration
     # In a real setup, this would be a libvirt_network resource
     network_id   = ${var.network_id}

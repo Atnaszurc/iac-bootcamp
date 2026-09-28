@@ -1,0 +1,28 @@
+# Backend validation: a misspelt argument and a wrong type
+#
+# `terraform validate` does NOT check the arguments inside a backend block.
+# `terraform init` does, before it contacts AWS, so this costs nothing and
+# needs no credentials:
+#
+#   mkdir -p try && cp 4-wrong-arguments.tf.example try/main.tf
+#   terraform -chdir=try validate                # Success!
+#   terraform -chdir=try init -input=false
+#
+#   Error: Unsupported argument
+#     on main.tf line 23, in terraform:
+#     23:     bucket_name = "my-terraform-state"
+#   An argument named "bucket_name" is not expected here.
+#
+#   Error: Incorrect attribute value type
+#     on main.tf line 26, in terraform:
+#     26:     encrypt     = "yes"
+#   Inappropriate value for attribute "encrypt": a bool is required.
+
+terraform {
+  backend "s3" {
+    bucket_name = "my-terraform-state" # should be: bucket
+    key         = "terraform.tfstate"
+    region      = "us-east-1"
+    encrypt     = "yes" # should be: true
+  }
+}

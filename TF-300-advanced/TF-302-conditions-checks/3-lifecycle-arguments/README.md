@@ -20,6 +20,7 @@ By the end of this section, you will be able to:
 
 - ✅ Use `create_before_destroy` for zero-downtime replacements
 - ✅ Use `prevent_destroy` to protect critical resources
+- ✅ Use `destroy = false` to keep a resource when Terraform would destroy it (1.16+)
 - ✅ Use `ignore_changes` to tolerate external drift
 - ✅ Use `replace_triggered_by` to force replacement on dependency changes
 - ✅ Combine lifecycle arguments with `precondition`/`postcondition`
@@ -36,6 +37,7 @@ resource "example" "this" {
   lifecycle {
     create_before_destroy = true          # Replace: new first, then destroy old
     prevent_destroy       = true          # Block: error if destroy attempted
+    destroy               = false         # Keep: forget instead of destroying (1.16+)
     ignore_changes        = [attribute]   # Drift: ignore external changes
     replace_triggered_by  = [dependency]  # Trigger: force replace on change (1.2+)
 
@@ -82,18 +84,30 @@ resource "local_file" "config" {
 ### Real-World Example (VM replacement)
 
 ```hcl
+resource "terraform_data" "release" {
+  input = var.image_version
+}
+
 resource "libvirt_domain" "web" {
-  name   = var.vm_name
-  memory = var.memory_mb
-  vcpu   = var.vcpu_count
+  # The name must change on every replacement: libvirt refuses two domains
+  # with the same name, and with create_before_destroy both exist briefly.
+  name        = "${var.vm_name}-${terraform_data.release.id}"
+  memory      = var.memory_mb
+  memory_unit = "MiB"
+  vcpu        = var.vcpu_count
+  type        = "kvm"
+  # ... devices ...
 
   lifecycle {
     # Create new VM before destroying old one
     # Ensures service continuity during VM replacement
     create_before_destroy = true
+    replace_triggered_by  = [terraform_data.release]
   }
 }
 ```
+
+> ⚠️ **Unique names are required.** `create_before_destroy` only works when the new object can coexist with the old one. Any attribute that must be unique (VM names, volume names, bucket names) needs a suffix that changes on replacement.
 
 ### ⚠️ Constraint Propagation
 
@@ -143,6 +157,91 @@ To destroy a protected resource, you must first remove `prevent_destroy = true` 
 - Manual deletion outside of Terraform
 - `terraform state rm` followed by manual deletion
 - Deletion by another Terraform workspace
+
+---
+
+## 📚 `destroy = false` (Terraform 1.16+)
+
+### The Problem It Solves
+
+`prevent_destroy` **blocks** the whole plan. Sometimes you want the opposite: let `terraform destroy` succeed, but **leave this one object alone** — an audit log, a backup bucket, a DNS record other teams depend on.
+
+Before 1.16, `destroy = false` only worked inside a [`removed` block](../../../TF-200-modules/TF-204-import-migration/removed-blocks/README.md). Terraform 1.16 allows it in a resource's own `lifecycle` block.
+
+### Usage
+
+```hcl
+resource "local_file" "audit_log" {
+  filename = "${path.module}/audit.log"
+  content  = "created by terraform\n"
+
+  lifecycle {
+    destroy = false # when Terraform would destroy this, it forgets it instead
+  }
+}
+```
+
+### What Happens on `terraform destroy`
+
+```bash
+terraform destroy
+#   # local_file.audit_log will no longer be managed by Terraform, but will not be destroyed
+#   # (destroy = false is set in the configuration)
+#
+# Plan: 0 to add, 0 to change, 0 to destroy.
+# Warning: Some objects will no longer be managed by Terraform
+#
+# Destroy complete! Resources: 0 destroyed.
+
+ls audit.log   # still there — and no longer in state
+```
+
+### ⚠️ Two Behaviors to Know
+
+**1. Replacement forgets the old object.** If a change forces replacement, Terraform does *not* destroy the old object — it drops it from state and creates a new one:
+
+```
+# local_file.audit_log must be replaced, but the existing object will not be destroyed
+# (destroy = false is set in the configuration)
++/- forget and then create replacement
+```
+
+For real infrastructure (a VM, a bucket) that leaves an **orphaned** object running outside Terraform's control.
+
+**2. Deleting the resource block deletes the protection.** The setting lives in the block. Remove the block and Terraform plans an ordinary destroy:
+
+```
+# local_file.audit_log will be destroyed
+# (because local_file.audit_log is not in configuration)
+```
+
+To stop managing a resource *after* removing its block, you still need a `removed` block with `lifecycle { destroy = false }`.
+
+### `prevent_destroy` vs `destroy = false`
+
+| | `prevent_destroy = true` | `destroy = false` (1.16+) |
+|---|---|---|
+| `terraform destroy` | ❌ Error — whole plan fails | ✅ Succeeds — object is forgotten, not destroyed |
+| Forced replacement | ❌ Error | ⚠️ Old object forgotten (orphaned), new one created |
+| Block removed from config | Protection gone — destroyed | Protection gone — destroyed |
+| Object after the operation | Still managed | Still exists, **not** managed |
+
+### Hands-On
+
+1. Add this resource to `example/main.tf`:
+   ```hcl
+   resource "local_file" "audit_log" {
+     filename = "${path.module}/audit.log"
+     content  = "v1\n"
+     lifecycle {
+       destroy = false
+     }
+   }
+   ```
+2. `terraform apply`, then `terraform destroy`. Check that `audit.log` still exists and `terraform state list` doesn't show it.
+3. `terraform apply` again, change `content` to `"v2\n"` and run `terraform plan`. Find "forget and then create replacement".
+4. Delete the resource block and run `terraform plan`. It's now a normal destroy.
+5. Remove `audit.log` by hand when you're done.
 
 ---
 
@@ -246,8 +345,11 @@ resource "local_file" "vm_config" {
 
 ```hcl
 resource "libvirt_volume" "base_image" {
-  name   = "base-image"
-  source = var.image_url
+  name = "base-image.qcow2"
+  pool = "default"
+  create = {
+    content = { url = var.image_url }
+  }
 }
 
 resource "libvirt_domain" "web" {

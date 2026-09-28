@@ -39,10 +39,10 @@ variable "environment" {
 
 locals {
   # Versioned image name: ubuntu-base-1.0.0
-  versioned_name  = "${var.image_name}-${var.version}"
+  versioned_name = "${var.image_name}-${var.version}"
 
   # Full artifact name includes environment: ubuntu-base-1.0.0-dev
-  artifact_name   = "${var.image_name}-${var.version}-${var.environment}"
+  artifact_name = "${var.image_name}-${var.version}-${var.environment}"
 
   # Build timestamp for traceability
   build_timestamp = formatdate("YYYY-MM-DD'T'hh:mm:ssZ", timestamp())

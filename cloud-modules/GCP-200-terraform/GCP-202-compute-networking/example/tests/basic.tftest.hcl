@@ -11,18 +11,18 @@ mock_provider "random" {}
 # Tests VPC, subnets, firewall rules, Cloud NAT, and Compute Engine instances
 
 variables {
-  project_id           = "test-project-12345"
-  region               = "us-central1"
-  zone                 = "us-central1-a"
-  environment          = "dev"
-  vpc_name             = "test-vpc"
-  public_subnet_cidr   = "10.0.1.0/24"
-  private_subnet_cidr  = "10.0.2.0/24"
-  instance_count       = 2
-  machine_type         = "e2-medium"
-  enable_nat           = true
-  ssh_user             = "terraform"
-  ssh_public_key       = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC... test-key"
+  project_id          = "test-project-12345"
+  region              = "us-central1"
+  zone                = "us-central1-a"
+  environment         = "dev"
+  vpc_name            = "test-vpc"
+  public_subnet_cidr  = "10.0.1.0/24"
+  private_subnet_cidr = "10.0.2.0/24"
+  instance_count      = 2
+  machine_type        = "e2-medium"
+  enable_nat          = true
+  ssh_user            = "terraform"
+  ssh_public_key      = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC... test-key"
 }
 
 run "validate_vpc_configuration" {

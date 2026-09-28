@@ -1,0 +1,4 @@
+{
+  "allowed_forward_modes": ["nat", "route", "isolated"],
+  "shared_networks": ["default"]
+}

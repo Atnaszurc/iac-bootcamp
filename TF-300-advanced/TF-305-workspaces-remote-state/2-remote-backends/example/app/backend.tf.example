@@ -1,0 +1,12 @@
+# Rename to backend.tf in step 3 of the hands-on.
+#
+# Only settings that are the same in every environment live here.
+# Where the bucket is and how to reach it comes from a .tfbackend file:
+#   terraform init -backend-config=moto.s3.tfbackend
+
+terraform {
+  backend "s3" {
+    key          = "app/terraform.tfstate"
+    use_lockfile = true # S3-native locking (Terraform 1.11+), no DynamoDB table
+  }
+}

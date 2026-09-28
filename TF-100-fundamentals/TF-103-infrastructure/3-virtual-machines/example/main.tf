@@ -21,15 +21,31 @@ provider "libvirt" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Network for the VMs
+# Network for the VMs (NAT + DHCP)
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "libvirt_network" "vm_network" {
   name      = "${var.project_name}-vm-net"
   autostart = true
-  
-  # Note: In 0.9.3, mode and addresses are not supported
-  # Networks are automatically NAT-enabled with DHCP
+
+  forward = {
+    mode = "nat"
+  }
+
+  ips = [
+    {
+      address = cidrhost(var.network_cidr, 1)
+      prefix  = tonumber(split("/", var.network_cidr)[1])
+      dhcp = {
+        ranges = [
+          {
+            start = cidrhost(var.network_cidr, 100)
+            end   = cidrhost(var.network_cidr, 200)
+          }
+        ]
+      }
+    }
+  ]
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -74,7 +90,12 @@ resource "libvirt_volume" "vm_disk" {
   pool     = libvirt_pool.vms.name
   capacity = each.value.disk_size_bytes
   backing_store = {
-    path = libvirt_volume.base.id
+    path = libvirt_volume.base.path
+    format = {
+      type = "qcow2"
+    }
+  }
+  target = {
     format = {
       type = "qcow2"
     }
@@ -102,7 +123,7 @@ resource "libvirt_cloudinit_disk" "vm_init" {
     packages:
       - curl
   EOT
-  
+
   meta_data = yamlencode({
     instance-id    = "${var.project_name}-${each.key}"
     local-hostname = each.key
@@ -112,8 +133,8 @@ resource "libvirt_cloudinit_disk" "vm_init" {
 # Upload cloud-init ISOs to the pool as volumes
 resource "libvirt_volume" "cloudinit" {
   for_each = var.vms
-  
-  name = "${var.project_name}-${each.key}-init-vol"
+
+  name = "${var.project_name}-${each.key}-init.iso"
   pool = libvirt_pool.vms.name
   create = {
     content = {
@@ -129,51 +150,94 @@ resource "libvirt_volume" "cloudinit" {
 resource "libvirt_domain" "vm" {
   for_each = var.vms
 
-  name   = "${var.project_name}-${each.key}"
-  memory = each.value.memory_mb
-  vcpu   = each.value.vcpu_count
-  type   = "kvm"
+  name        = "${var.project_name}-${each.key}"
+  memory      = each.value.memory_mb
+  memory_unit = "MiB" # without this, memory is interpreted as KiB
+  vcpu        = each.value.vcpu_count
+  type        = "kvm"
+  running     = true
 
+  os = {
+    type         = "hvm"
+    type_arch    = "x86_64"
+    type_machine = "q35"
+  }
+
+  # Plural names: disks, interfaces, consoles. Terraform silently ignores
+  # unknown keys inside nested attributes — a typo means a missing device.
   devices = {
-    disk = [
+    disks = [
       {
-        volume = {
-          volume = libvirt_volume.vm_disk[each.key].id
+        source = {
+          volume = {
+            pool   = libvirt_volume.vm_disk[each.key].pool
+            volume = libvirt_volume.vm_disk[each.key].name
+          }
         }
         target = {
           dev = "vda"
           bus = "virtio"
         }
+        driver = {
+          type = "qcow2"
+        }
       },
       {
-        volume = {
-          volume = libvirt_volume.cloudinit[each.key].id
+        device = "cdrom"
+        source = {
+          volume = {
+            pool   = libvirt_volume.cloudinit[each.key].pool
+            volume = libvirt_volume.cloudinit[each.key].name
+          }
         }
         target = {
-          dev = "vdb"
-          bus = "virtio"
+          dev = "sda"
+          bus = "sata"
         }
       }
     ]
-    interface = [
+    interfaces = [
       {
-        network = {
-          network = libvirt_network.vm_network.name
-        }
         model = {
           type = "virtio"
         }
-        wait_for_lease = true
-      }
-    ]
-    console = [
-      {
-        type = "pty"
-        target = {
-          port = 0
-          type = "serial"
+        source = {
+          network = {
+            network = libvirt_network.vm_network.name
+          }
+        }
+        wait_for_ip = {
+          source  = "lease"
+          timeout = 300
         }
       }
     ]
+    consoles = [
+      {
+        target = {
+          type = "serial"
+          port = 0
+        }
+      }
+    ]
+  }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# IP addresses from the DHCP leases
+# ─────────────────────────────────────────────────────────────────────────────
+
+data "libvirt_domain_interface_addresses" "vm" {
+  for_each = libvirt_domain.vm
+
+  domain = each.value.name
+  source = "lease"
+}
+
+output "vm_ips" {
+  description = "IP address of each VM, keyed by VM name suffix"
+  value = {
+    for name, d in data.libvirt_domain_interface_addresses.vm :
+    name => try(d.interfaces[0].addrs[0].addr, null)
   }
 }

@@ -78,7 +78,7 @@ variable "virtio_iso_path" {
 source "qemu" "windows_2022" {
   # Base ISO — Windows Server 2022 (local file, must be downloaded separately)
   iso_url      = var.windows_iso_path
-  iso_checksum = "none"  # Set to actual checksum in production
+  iso_checksum = "none" # Set to actual checksum in production
 
   # Output
   output_directory = var.output_dir

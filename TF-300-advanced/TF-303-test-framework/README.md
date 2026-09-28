@@ -157,7 +157,7 @@ terraform {
   required_providers {
     libvirt = {
       source  = "dmacvicar/libvirt"
-      version = "~> 0.7"
+      version = "~> 0.9"
     }
   }
 }
@@ -179,23 +179,22 @@ variable "network_cidr" {
 
 resource "libvirt_network" "main" {
   name      = var.network_name
-  mode      = "nat"
-  domain    = "test.local"
-  addresses = [var.network_cidr]
-  
   autostart = true
-  
-  dns {
-    enabled = true
-  }
+
+  forward = { mode = "nat" }
+  domain  = { name = "test.local" }
+  dns     = { enable = "yes" }
+
+  ips = [
+    {
+      address = cidrhost(var.network_cidr, 1)
+      prefix  = tonumber(split("/", var.network_cidr)[1])
+    }
+  ]
 }
 
 output "network_id" {
   value = libvirt_network.main.id
-}
-
-output "network_bridge" {
-  value = libvirt_network.main.bridge
 }
 ```
 
@@ -208,25 +207,40 @@ variables {
 
 run "verify_network_properties" {
   command = plan
-  
+
   assert {
     condition     = libvirt_network.main.name == var.network_name
     error_message = "Network name does not match expected value"
   }
-  
+
   assert {
-    condition     = libvirt_network.main.mode == "nat"
-    error_message = "Network mode should be 'nat'"
+    condition     = libvirt_network.main.forward.mode == "nat"
+    error_message = "Network forward mode should be 'nat'"
   }
-  
+
   assert {
     condition     = libvirt_network.main.autostart == true
     error_message = "Network autostart should be enabled"
   }
-  
+
   assert {
-    condition     = contains(libvirt_network.main.addresses, var.network_cidr)
-    error_message = "Network CIDR not found in addresses"
+    condition     = libvirt_network.main.ips[0].address == cidrhost(var.network_cidr, 1)
+    error_message = "The host address should be the first address in network_cidr"
+  }
+}
+
+run "verify_network_created" {
+  command = apply
+
+  # The network's ID is its libvirt UUID, only known after creation
+  assert {
+    condition     = can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", libvirt_network.main.id))
+    error_message = "Network ID should be a UUID after creation"
+  }
+
+  assert {
+    condition     = output.network_id == libvirt_network.main.id
+    error_message = "network_id output should expose the network's ID"
   }
 }
 ```
@@ -245,14 +259,16 @@ variable "volume_size" {
 }
 
 resource "libvirt_volume" "main" {
-  name   = var.volume_name
-  pool   = "default"
-  size   = var.volume_size
-  format = "qcow2"
+  name     = "${var.volume_name}.qcow2"
+  pool     = "default"
+  capacity = var.volume_size
+  target = {
+    format = { type = "qcow2" }
+  }
 }
 
-output "volume_id" {
-  value = libvirt_volume.main.id
+output "volume_path" {
+  value = libvirt_volume.main.path
 }
 ```
 
@@ -265,20 +281,20 @@ variables {
 
 run "verify_volume_creation" {
   command = plan
-  
+
   assert {
-    condition     = libvirt_volume.main.name == var.volume_name
+    condition     = libvirt_volume.main.name == "${var.volume_name}.qcow2"
     error_message = "Volume name does not match"
   }
-  
+
   assert {
-    condition     = libvirt_volume.main.format == "qcow2"
+    condition     = libvirt_volume.main.target.format.type == "qcow2"
     error_message = "Volume format should be qcow2"
   }
-  
+
   assert {
-    condition     = libvirt_volume.main.size == var.volume_size
-    error_message = "Volume size does not match expected value"
+    condition     = libvirt_volume.main.capacity == var.volume_size
+    error_message = "Volume capacity does not match expected value"
   }
 }
 ```
@@ -318,16 +334,12 @@ run "test_with_plan" {
 
 ```hcl
 run "test_with_apply" {
-  command = apply  # Actually creates infrastructure
-  
+  command = apply # Actually creates infrastructure
+
+  # The network ID is its libvirt UUID, only known after creation
   assert {
-    condition     = libvirt_network.main.id != ""
-    error_message = "Network ID should be populated after creation"
-  }
-  
-  assert {
-    condition     = libvirt_network.main.bridge != ""
-    error_message = "Network bridge should be assigned"
+    condition     = can(regex("^[0-9a-f-]{36}$", libvirt_network.main.id))
+    error_message = "Network ID should be a UUID after creation"
   }
 }
 ```
@@ -374,20 +386,21 @@ run "verify_vm_configuration" {
     error_message = "VM cannot exceed 8 vCPUs"
   }
   
-  # Memory assertions
+  # Memory assertions (memory is in memory_unit, here MiB)
   assert {
     condition     = libvirt_domain.vm.memory >= 512
-    error_message = "VM must have at least 512 MB RAM"
+    error_message = "VM must have at least 512 MiB RAM"
   }
-  
+
   assert {
     condition     = libvirt_domain.vm.memory <= 16384
-    error_message = "VM cannot exceed 16 GB RAM"
+    error_message = "VM cannot exceed 16 GiB RAM"
   }
-  
-  # Network assertions
+
+  # Network assertions. Worth having: Terraform silently ignores a misspelled
+  # key like "interface" inside devices, leaving the VM without a NIC.
   assert {
-    condition     = length(libvirt_domain.vm.network_interface) > 0
+    condition     = length(libvirt_domain.vm.devices.interfaces) > 0
     error_message = "VM must have at least one network interface"
   }
 }
@@ -408,7 +421,7 @@ run "verify_multiple_volumes" {
   # Test that all volumes use qcow2
   assert {
     condition = alltrue([
-      for v in libvirt_volume.data : v.format == "qcow2"
+      for v in libvirt_volume.data : v.target.format.type == "qcow2"
     ])
     error_message = "All volumes must use qcow2 format"
   }
@@ -416,7 +429,7 @@ run "verify_multiple_volumes" {
   # Test volume sizes
   assert {
     condition = alltrue([
-      for v in libvirt_volume.data : v.size >= 1073741824
+      for v in libvirt_volume.data : v.capacity >= 1073741824
     ])
     error_message = "All volumes must be at least 1 GB"
   }
@@ -532,38 +545,32 @@ run "test_network_logic" {
 mock_provider "libvirt" {
   mock_resource "libvirt_network" {
     defaults = {
-      id     = "mock-network-id-12345"
-      name   = "mock-network"
-      bridge = "virbr1"
-      mode   = "nat"
+      id = "00000000-0000-4000-8000-000000000001"
     }
   }
-  
+
   mock_resource "libvirt_volume" {
     defaults = {
-      id     = "mock-volume-id-67890"
-      name   = "mock-volume"
-      format = "qcow2"
-      size   = 10737418240
+      path = "/var/lib/libvirt/images/mock-disk.qcow2"
     }
   }
 }
 
+# Mocked computed values are UNKNOWN during plan. With a mock provider,
+# apply is safe (nothing is created) and makes them available.
 run "test_with_mocks" {
-  command = plan
-  
-  # Can test computed values with mocks
+  command = apply
+
   assert {
-    condition     = libvirt_network.main.id != ""
-    error_message = "Network ID should be populated"
-  }
-  
-  assert {
-    condition     = libvirt_network.main.bridge != ""
-    error_message = "Bridge should be assigned"
+    condition     = libvirt_network.main.id == "00000000-0000-4000-8000-000000000001"
+    error_message = "Network ID should come from the mock"
   }
 }
 ```
+
+> 💡 Only mock **computed** attributes (IDs, paths, UUIDs). Everything you set in the configuration comes from the configuration. Mock defaults must use the provider's real attribute names and types: `libvirt_domain.id` is a *number* (libvirt's runtime ID), so a string there fails with `a number is required`.
+
+> 💡 Want mocked values during `command = plan`? Add `override_during = plan` to the mock provider (see [Advanced Features](#override_during--plan-terraform-115)).
 
 ### External Mock Files
 
@@ -571,30 +578,21 @@ run "test_with_mocks" {
 ```hcl
 mock_resource "libvirt_network" {
   defaults = {
-    id        = "mock-net-id"
-    name      = "mock-network"
-    bridge    = "virbr1"
-    mode      = "nat"
-    addresses = ["192.168.100.0/24"]
-    autostart = true
+    id = "00000000-0000-4000-8000-000000000001"
   }
 }
 
 mock_resource "libvirt_volume" {
   defaults = {
-    id     = "mock-vol-id"
-    name   = "mock-volume"
-    format = "qcow2"
-    size   = 10737418240
+    id   = "/var/lib/libvirt/images/mock-disk.qcow2"
+    key  = "/var/lib/libvirt/images/mock-disk.qcow2"
+    path = "/var/lib/libvirt/images/mock-disk.qcow2"
   }
 }
 
 mock_resource "libvirt_domain" {
   defaults = {
-    id     = "mock-vm-id"
-    name   = "mock-vm"
-    vcpu   = 2
-    memory = 2048
+    uuid = "00000000-0000-4000-8000-000000000002"
   }
 }
 ```
@@ -602,15 +600,15 @@ mock_resource "libvirt_domain" {
 **Test File** (`tests/unit.tftest.hcl`):
 ```hcl
 mock_provider "libvirt" {
-  source = "./mocks/libvirt.tfmock.hcl"
+  source = "./tests/mocks" # directory containing .tfmock.hcl files
 }
 
 run "test_with_external_mocks" {
-  command = plan
-  
+  command = apply # safe: the provider is mocked
+
   assert {
-    condition     = libvirt_domain.vm.vcpu == 2
-    error_message = "VM vCPU count incorrect"
+    condition     = output.vm_id == "00000000-0000-4000-8000-000000000002"
+    error_message = "vm_id should come from the mocked domain UUID"
   }
 }
 ```
@@ -681,9 +679,9 @@ run "test_network_naming" {
 
 run "test_cidr_calculation" {
   command = plan
-  
+
   assert {
-    condition     = libvirt_network.main.addresses[0] == "${var.network_prefix}.100.0/24"
+    condition     = libvirt_network.main.ips[0].address == "${var.network_prefix}.100.1"
     error_message = "CIDR calculation failed"
   }
 }
@@ -695,37 +693,80 @@ run "test_cidr_calculation" {
 
 ```hcl
 # tests/integration/full-stack.tftest.hcl
+# Integration test: creates REAL libvirt resources and destroys them again
+# when the test file finishes. Needs a running libvirt daemon.
+#
+# The first two runs use plan_options.target to build the stack in stages.
+# Terraform prints a "Resource targeting is in effect" warning for them;
+# that is expected here.
 
 variables {
-  network_name = "integration-test-net"
-  vm_name      = "integration-test-vm"
+  environment = "inttest"
 }
 
 run "create_network" {
   command = apply
-  
-  assert {
-    condition     = libvirt_network.main.id != ""
-    error_message = "Network was not created"
+
+  # Only create the network in this run
+  plan_options {
+    target = [libvirt_network.main]
   }
-  
+
   assert {
-    condition     = libvirt_network.main.bridge != ""
-    error_message = "Network bridge not assigned"
+    condition     = can(regex("^[0-9a-f-]{36}$", libvirt_network.main.id))
+    error_message = "Network was not created (no UUID)"
   }
 }
 
-run "create_vm" {
+run "create_volumes" {
   command = apply
-  
-  assert {
-    condition     = libvirt_domain.vm.id != ""
-    error_message = "VM was not created"
+
+  plan_options {
+    target = [libvirt_volume.vm_disks]
   }
-  
+
   assert {
-    condition     = length(libvirt_domain.vm.network_interface) > 0
-    error_message = "VM has no network interfaces"
+    condition     = length(libvirt_volume.vm_disks) == var.vm_count
+    error_message = "Expected one disk per VM"
+  }
+
+  assert {
+    condition     = alltrue([for v in libvirt_volume.vm_disks : startswith(v.path, "/")])
+    error_message = "Every volume should have a path on the host after creation"
+  }
+}
+
+run "create_vms" {
+  command = apply
+
+  assert {
+    condition     = length(output.vm_ids) == var.vm_count
+    error_message = "Expected ${var.vm_count} VMs"
+  }
+
+  assert {
+    condition     = alltrue([for vm in libvirt_domain.vms : vm.running])
+    error_message = "All VMs should be running"
+  }
+}
+
+run "verify_relationships" {
+  command = plan
+
+  assert {
+    condition = alltrue([
+      for vm in libvirt_domain.vms :
+      vm.devices.interfaces[0].source.network.network == libvirt_network.main.name
+    ])
+    error_message = "Every VM should be attached to the environment network"
+  }
+
+  assert {
+    condition = alltrue([
+      for i, vm in libvirt_domain.vms :
+      vm.devices.disks[0].source.volume.volume == libvirt_volume.vm_disks[i].name
+    ])
+    error_message = "Every VM should boot from its own disk"
   }
 }
 ```
@@ -762,7 +803,7 @@ run "test1" {
 run "verify_network_uses_nat_mode_for_internet_access" {
   command = plan
   assert {
-    condition     = libvirt_network.main.mode == "nat"
+    condition     = libvirt_network.main.forward.mode == "nat"
     error_message = "Network must use NAT mode for internet access"
   }
 }
@@ -884,7 +925,7 @@ run "create_network_and_vm" {
   }
   
   assert {
-    condition     = libvirt_domain.vm.id != ""
+    condition     = libvirt_domain.vm.uuid != "" # .id is libvirt's runtime number
     error_message = "VM creation failed"
   }
 }
@@ -946,17 +987,17 @@ run "test_monitoring_disabled" {
 ```hcl
 run "test_computed_values" {
   command = apply
-  
-  # Test that ID is generated
+
+  # Network ID = libvirt UUID
   assert {
-    condition     = libvirt_network.main.id != ""
-    error_message = "Network ID should be computed after creation"
+    condition     = can(regex("^[0-9a-f-]{36}$", libvirt_network.main.id))
+    error_message = "Network ID should be a UUID after creation"
   }
-  
-  # Test that bridge is assigned
+
+  # Volume path on the host, known only after creation
   assert {
-    condition     = can(regex("^virbr\\d+$", libvirt_network.main.bridge))
-    error_message = "Bridge name should follow virbr<N> pattern"
+    condition     = startswith(libvirt_volume.main.path, "/var/lib/libvirt/images/")
+    error_message = "Volume should live in the default pool directory"
   }
 }
 ```
@@ -966,21 +1007,16 @@ run "test_computed_values" {
 ```hcl
 run "test_module_outputs" {
   command = plan
-  
+
+  # Outputs built from input values are known at plan time...
   assert {
-    condition     = output.network_id != ""
-    error_message = "Module should output network_id"
+    condition     = can(cidrhost(output.network_cidr, 0))
+    error_message = "network_cidr output should be a valid CIDR"
   }
-  
-  assert {
-    condition     = output.network_cidr != ""
-    error_message = "Module should output network_cidr"
-  }
-  
-  assert {
-    condition     = can(regex("^\\d+\\.\\d+\\.\\d+\\.\\d+/\\d+$", output.network_cidr))
-    error_message = "network_cidr output should be valid CIDR"
-  }
+
+  # ...but outputs from computed attributes (like network_id) are unknown
+  # until apply. Asserting on them in a plan run fails with
+  # "Unknown condition value". Test those in an apply run.
 }
 ```
 
@@ -999,12 +1035,15 @@ tests/network.tftest.hcl... in progress
 │ Error: Test assertion failed
 │ 
 │   on tests/network.tftest.hcl line 12, in run "verify_network_properties":
-│   12:     condition     = libvirt_network.main.mode == "bridge"
-│ 
-│ Network mode should be 'nat'
-│ 
-│ Expected: bridge
-│ Actual: nat
+│   12:     condition     = libvirt_network.main.forward.mode == "route"
+│     ├────────────────
+│     │ Diff:
+│     │ --- actual
+│     │ +++ expected
+│     │ - "nat"
+│     │ + "route"
+│
+│ Network forward mode should be 'nat'
 ╵
 
 tests/network.tftest.hcl... fail
@@ -1023,7 +1062,7 @@ run "debug_network_config" {
   # Temporary debug assertion
   assert {
     condition     = false  # Always fails to show value
-    error_message = "DEBUG: Network mode is '${libvirt_network.main.mode}'"
+    error_message = "DEBUG: Network forward mode is '${libvirt_network.main.forward.mode}'"
   }
 }
 ```
@@ -1062,13 +1101,13 @@ run "test_network_full_config" {
 # After a failed test, inspect state
 terraform console
 
-> libvirt_network.main
+> libvirt_network.main.forward
 {
-  "addresses" = ["192.168.100.0/24"]
   "mode" = "nat"
-  "name" = "test-network"
   # ...
 }
+> libvirt_network.main.ips[0].address
+"192.168.100.1"
 ```
 
 #### 4. Isolate the Problem
@@ -1084,7 +1123,7 @@ run "test_network" {
   }
   
   # assert {
-  #   condition     = libvirt_network.main.mode == "bridge"
+  #   condition     = libvirt_network.main.forward.mode == "route"
   #   error_message = "Mode check"
   # }
 }
@@ -1102,7 +1141,7 @@ run "test_network" {
 1. Create a network configuration with variables
 2. Write a test file with multiple assertions
 3. Test with both `plan` and `apply` commands
-4. Verify network properties (name, mode, CIDR, autostart)
+4. Verify network properties (name, forward mode, host address, autostart)
 
 **Starter Code** (`main.tf`):
 ```hcl
@@ -1110,7 +1149,7 @@ terraform {
   required_providers {
     libvirt = {
       source  = "dmacvicar/libvirt"
-      version = "~> 0.7"
+      version = "~> 0.9"
     }
   }
 }
@@ -1120,24 +1159,30 @@ provider "libvirt" {
 }
 
 variable "network_name" {
-  type = string
+  type        = string
+  description = "Name of the network"
 }
 
 variable "network_cidr" {
-  type    = string
-  default = "192.168.100.0/24"
+  type        = string
+  description = "CIDR block for the network"
+  default     = "192.168.100.0/24"
 }
 
 resource "libvirt_network" "main" {
   name      = var.network_name
-  mode      = "nat"
-  domain    = "lab1.local"
-  addresses = [var.network_cidr]
   autostart = true
-  
-  dns {
-    enabled = true
-  }
+
+  forward = { mode = "nat" }
+  domain  = { name = "test.local" }
+  dns     = { enable = "yes" }
+
+  ips = [
+    {
+      address = cidrhost(var.network_cidr, 1)
+      prefix  = tonumber(split("/", var.network_cidr)[1])
+    }
+  ]
 }
 
 output "network_id" {
@@ -1148,7 +1193,7 @@ output "network_id" {
 **Your Task**: Create `tests/network.tftest.hcl` with:
 - Global variables for network_name and network_cidr
 - A `plan` test verifying all properties
-- An `apply` test verifying computed values (id, bridge)
+- An `apply` test verifying computed values (the network ID is a UUID)
 
 **Expected Result**:
 ```bash
@@ -1194,34 +1239,55 @@ variable "network_name" {
 }
 
 resource "libvirt_network" "vm_network" {
-  name      = var.network_name
-  mode      = "nat"
-  addresses = ["192.168.200.0/24"]
+  name    = var.network_name
+  forward = { mode = "nat" }
+  ips = [{
+    address = "192.168.200.1"
+    prefix  = 24
+    dhcp    = { ranges = [{ start = "192.168.200.100", end = "192.168.200.200" }] }
+  }]
 }
 
 resource "libvirt_volume" "vm_disk" {
-  name   = "${var.vm_name}-disk"
-  pool   = "default"
-  size   = 10737418240
-  format = "qcow2"
+  name     = "${var.vm_name}-disk.qcow2"
+  pool     = "default"
+  capacity = 10737418240
+  target   = { format = { type = "qcow2" } }
 }
 
 resource "libvirt_domain" "vm" {
-  name   = var.vm_name
-  memory = var.vm_memory
-  vcpu   = var.vm_vcpu
-  
-  network_interface {
-    network_id = libvirt_network.vm_network.id
-  }
-  
-  disk {
-    volume_id = libvirt_volume.vm_disk.id
+  name        = var.vm_name
+  memory      = var.vm_memory
+  memory_unit = "MiB"
+  vcpu        = var.vm_vcpu
+  type        = "kvm"
+
+  os = { type = "hvm", type_arch = "x86_64", type_machine = "q35" }
+
+  devices = {
+    disks = [
+      {
+        source = {
+          volume = {
+            pool   = libvirt_volume.vm_disk.pool
+            volume = libvirt_volume.vm_disk.name
+          }
+        }
+        target = { dev = "vda", bus = "virtio" }
+        driver = { type = "qcow2" }
+      }
+    ]
+    interfaces = [
+      {
+        model  = { type = "virtio" }
+        source = { network = { network = libvirt_network.vm_network.name } }
+      }
+    ]
   }
 }
 
 output "vm_id" {
-  value = libvirt_domain.vm.id
+  value = libvirt_domain.vm.uuid # id is libvirt's runtime number; uuid is stable
 }
 ```
 
@@ -1268,40 +1334,64 @@ variable "vm_count" {
 
 resource "libvirt_network" "main" {
   name      = "${var.environment}-network"
-  mode      = "nat"
-  addresses = ["192.168.150.0/24"]
   autostart = true
+  forward   = { mode = "nat" }
+  ips = [{
+    address = "192.168.150.1"
+    prefix  = 24
+    dhcp    = { ranges = [{ start = "192.168.150.100", end = "192.168.150.200" }] }
+  }]
 }
 
+# Empty disks keep the lab fast: the VMs boot to "no bootable device",
+# which is enough to test that Terraform wires everything together.
 resource "libvirt_volume" "vm_disks" {
-  count  = var.vm_count
-  name   = "${var.environment}-vm-${count.index}-disk"
-  pool   = "default"
-  size   = 5368709120  # 5 GB
-  format = "qcow2"
+  count    = var.vm_count
+  name     = "${var.environment}-vm-${count.index}-disk.qcow2"
+  pool     = "default"
+  capacity = 5368709120 # 5 GB
+  target   = { format = { type = "qcow2" } }
 }
 
 resource "libvirt_domain" "vms" {
-  count  = var.vm_count
-  name   = "${var.environment}-vm-${count.index}"
-  memory = 1024
-  vcpu   = 1
-  
-  network_interface {
-    network_id = libvirt_network.main.id
-  }
-  
-  disk {
-    volume_id = libvirt_volume.vm_disks[count.index].id
+  count       = var.vm_count
+  name        = "${var.environment}-vm-${count.index}"
+  memory      = 512
+  memory_unit = "MiB"
+  vcpu        = 1
+  type        = "kvm"
+  running     = true
+
+  os = { type = "hvm", type_arch = "x86_64", type_machine = "q35" }
+
+  devices = {
+    disks = [
+      {
+        source = {
+          volume = {
+            pool   = libvirt_volume.vm_disks[count.index].pool
+            volume = libvirt_volume.vm_disks[count.index].name
+          }
+        }
+        target = { dev = "vda", bus = "virtio" }
+        driver = { type = "qcow2" }
+      }
+    ]
+    interfaces = [
+      {
+        model  = { type = "virtio" }
+        source = { network = { network = libvirt_network.main.name } }
+      }
+    ]
   }
 }
 
 output "vm_ids" {
-  value = libvirt_domain.vms[*].id
+  value = libvirt_domain.vms[*].uuid
 }
 
-output "network_bridge" {
-  value = libvirt_network.main.bridge
+output "network_id" {
+  value = libvirt_network.main.id
 }
 ```
 
@@ -1591,70 +1681,46 @@ run "example" {
 
 ### Functions in Mock Blocks
 
-Terraform 1.15 allows you to use **functions within mock blocks**, enabling more dynamic and realistic mock data:
+Terraform 1.15 allows **functions in mock defaults**, so mocked values can look realistic:
 
 ```hcl
-mock_provider "local" {
-  mock_resource "local_file" {
+mock_provider "libvirt" {
+  mock_resource "libvirt_domain" {
     defaults = {
-      # Use functions to generate dynamic mock data
-      id       = "mock-${uuid()}"
-      filename = "/tmp/test-${timestamp()}.txt"
-      content  = upper("mock content")
-      
-      # Use conditional logic
-      file_permission = var.environment == "prod" ? "0600" : "0644"
+      # A fresh UUID for every mocked VM
+      uuid = uuid()
+    }
+  }
+
+  mock_resource "libvirt_volume" {
+    defaults = {
+      path = format("/var/lib/libvirt/images/%s.qcow2", substr(sha256("disk"), 0, 12))
     }
   }
 }
 
-run "test_with_dynamic_mocks" {
-  command = plan
-  
+run "dynamic_mock_values" {
+  command = apply # mocked computed values are only known after (mocked) apply
+
   assert {
-    condition     = can(regex("^mock-[a-f0-9-]+$", local_file.example.id))
-    error_message = "Mock ID should follow UUID pattern"
+    condition     = can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-", output.vm_id))
+    error_message = "The mocked UUID should look like a UUID"
   }
 }
 ```
 
-**Benefits**:
-- **Dynamic Values**: Generate unique IDs, timestamps, or random values
-- **Conditional Logic**: Adjust mocks based on variables or environment
-- **Realistic Data**: Use functions like `uuid()`, `timestamp()`, `formatdate()`
-- **Complex Scenarios**: Test edge cases with computed mock values
+(This runs against the Lab 2 configuration above.)
 
-**Common Use Cases**:
-```hcl
-mock_provider "aws" {
-  mock_resource "aws_instance" {
-    defaults = {
-      # Generate realistic ARN
-      arn = "arn:aws:ec2:us-east-1:123456789012:instance/${uuid()}"
-      
-      # Dynamic timestamps
-      launch_time = timestamp()
-      
-      # Conditional values
-      instance_type = var.environment == "prod" ? "t3.large" : "t3.micro"
-      
-      # Computed tags
-      tags = merge(
-        var.common_tags,
-        {
-          "CreatedAt" = formatdate("YYYY-MM-DD", timestamp())
-        }
-      )
-    }
-  }
-}
-```
+Three limits worth knowing, all verified on Terraform 1.16:
+- **No variables**: a mock default can't reference `var.*` (`Unsupported attribute`). Mocks are defined per provider, outside any one configuration.
+- **Only computed attributes**: defaults fill in values the provider computes (`uuid`, `path`). An attribute your configuration sets keeps the configured value, whatever the mock says.
+- **Unknown during plan**: mocked computed values are unknown in `command = plan` runs, unless you add `override_during = plan`.
 
 ---
 
 ### Experimental: Backend Blocks in Run Blocks
 
-> **⚠️ Experimental Feature**: This feature is experimental in Terraform 1.15 and requires alpha/beta builds. It may change in future versions.
+> **⚠️ Experimental Feature**: Only available in experimental (alpha) builds. Terraform 1.16.4 and 1.17.0-beta2 both reject it: `The backend block is only available within run blocks in experimental builds`. It may change before it becomes generally available.
 
 Run blocks can now specify `backend` blocks to load state from a specific backend instead of starting from empty state:
 
@@ -1719,7 +1785,7 @@ run "test_changes" {
 
 ### Experimental: `skip_cleanup` Attribute
 
-> **⚠️ Experimental Feature**: This feature is experimental in Terraform 1.15 and requires alpha/beta builds.
+> **⚠️ Experimental Feature**: Only available in experimental (alpha) builds. Terraform 1.16.4 and 1.17.0-beta2 both reject it: `The skip_cleanup attribute is only available in experimental builds`.
 
 The `skip_cleanup` attribute tells `terraform test` not to clean up state files produced by run blocks:
 

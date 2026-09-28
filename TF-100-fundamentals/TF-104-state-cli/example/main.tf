@@ -35,9 +35,20 @@ provider "libvirt" {
 resource "libvirt_network" "main" {
   name      = "${var.project_name}-net"
   autostart = true
-  
-  # Note: In 0.9.3, mode and addresses are not supported
-  # Networks are automatically NAT-enabled with DHCP
+
+  forward = {
+    mode = "nat"
+  }
+
+  ips = [
+    {
+      address = "10.104.0.1"
+      prefix  = 24
+      dhcp = {
+        ranges = [{ start = "10.104.0.100", end = "10.104.0.200" }]
+      }
+    }
+  ]
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -72,7 +83,12 @@ resource "libvirt_volume" "vm" {
   pool     = libvirt_pool.main.name
   capacity = 10737418240 # 10 GB
   backing_store = {
-    path = libvirt_volume.base.id
+    path = libvirt_volume.base.path
+    format = {
+      type = "qcow2"
+    }
+  }
+  target = {
     format = {
       type = "qcow2"
     }
@@ -96,7 +112,7 @@ resource "libvirt_cloudinit_disk" "init" {
         ssh_authorized_keys:
           - ${var.ssh_public_key}
   EOT
-  
+
   meta_data = yamlencode({
     instance-id    = var.project_name
     local-hostname = var.project_name
@@ -119,49 +135,70 @@ resource "libvirt_volume" "cloudinit" {
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "libvirt_domain" "vm" {
-  name   = var.project_name
-  memory = var.memory_mb
-  vcpu   = var.vcpu_count
-  type   = "kvm"
+  name        = var.project_name
+  memory      = var.memory_mb
+  memory_unit = "MiB"
+  vcpu        = var.vcpu_count
+  type        = "kvm"
+  running     = true
+
+  os = {
+    type         = "hvm"
+    type_arch    = "x86_64"
+    type_machine = "q35"
+  }
 
   devices = {
-    disk = [
+    disks = [
       {
-        volume = {
-          volume = libvirt_volume.vm.id
+        source = {
+          volume = {
+            pool   = libvirt_volume.vm.pool
+            volume = libvirt_volume.vm.name
+          }
         }
         target = {
           dev = "vda"
           bus = "virtio"
         }
+        driver = {
+          type = "qcow2"
+        }
       },
       {
-        volume = {
-          volume = libvirt_volume.cloudinit.id
+        device = "cdrom"
+        source = {
+          volume = {
+            pool   = libvirt_volume.cloudinit.pool
+            volume = libvirt_volume.cloudinit.name
+          }
         }
         target = {
-          dev = "vdb"
-          bus = "virtio"
+          dev = "sda"
+          bus = "sata"
         }
       }
     ]
-    interface = [
+    interfaces = [
       {
-        network = {
-          network = libvirt_network.main.name
-        }
         model = {
           type = "virtio"
         }
-        wait_for_lease = true
+        source = {
+          network = {
+            network = libvirt_network.main.name
+          }
+        }
+        wait_for_ip = {
+          source = "lease"
+        }
       }
     ]
-    console = [
+    consoles = [
       {
-        type = "pty"
         target = {
-          port = 0
           type = "serial"
+          port = 0
         }
       }
     ]

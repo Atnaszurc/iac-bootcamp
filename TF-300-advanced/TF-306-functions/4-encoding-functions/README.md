@@ -179,7 +179,7 @@ Encodes a UTF-8 string to Base64:
 
 ```hcl
 locals {
-  # Encode a script for user_data (AWS EC2 pattern)
+  # Encode a script (cloud APIs often want user_data like this)
   startup_script = base64encode(<<-SCRIPT
     #!/bin/bash
     apt-get update
@@ -189,11 +189,11 @@ locals {
   )
 }
 
-# Many cloud APIs accept Base64-encoded user_data
-resource "aws_instance" "web" {
-  ami           = "ami-12345678"
-  instance_type = "t3.micro"
-  user_data     = local.startup_script
+# Some APIs and resources take Base64 input. local_file's content_base64
+# decodes it and writes the original text:
+resource "local_file" "startup" {
+  filename       = "${path.module}/startup.sh"
+  content_base64 = local.startup_script
 }
 ```
 

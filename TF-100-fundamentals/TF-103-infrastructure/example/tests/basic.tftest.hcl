@@ -5,47 +5,12 @@
 #
 # Teaching focus: libvirt_network, libvirt_pool, libvirt_volume,
 #                 libvirt_cloudinit_disk, libvirt_domain
+#
+# mock_provider still uses the real provider schema, but Terraform silently
+# drops unknown keys inside nested attributes (e.g. devices.disk instead of
+# devices.disks). The "devices" assertions below catch that class of mistake.
 
-# mock_provider replaces the libvirt schema entirely — no daemon or real provider needed.
-# All attributes used in main.tf must be declared here so HCL validation passes.
-mock_provider "libvirt" {
-  mock_resource "libvirt_network" {
-    defaults = {
-      id        = "mock-network-id"
-      name      = "mock-network"
-      mode      = "nat"
-      addresses = ["10.10.0.0/24"]
-      autostart = true
-    }
-  }
-  mock_resource "libvirt_pool" {
-    defaults = {
-      id   = "mock-pool-id"
-      name = "mock-pool"
-      type = "dir"
-    }
-  }
-  mock_resource "libvirt_volume" {
-    defaults = {
-      id   = "mock-volume-id"
-      name = "mock-volume"
-    }
-  }
-  mock_resource "libvirt_cloudinit_disk" {
-    defaults = {
-      id   = "mock-cloudinit-id"
-      name = "mock-cloudinit.iso"
-    }
-  }
-  mock_resource "libvirt_domain" {
-    defaults = {
-      id     = "mock-domain-id"
-      name   = "mock-vm"
-      memory = 1024
-      vcpu   = 1
-    }
-  }
-}
+mock_provider "libvirt" {}
 
 run "plan_with_defaults" {
   command = plan
@@ -55,8 +20,20 @@ run "plan_with_defaults" {
     error_message = "Network name should be '<project_name>-network' with default project_name 'tf-103'"
   }
 
-  # Note: libvirt_network in 0.9.3 doesn't expose mode attribute
-  # Networks are automatically configured as NAT with DHCP
+  assert {
+    condition     = libvirt_network.example.forward.mode == "nat"
+    error_message = "Network should use NAT forwarding"
+  }
+
+  assert {
+    condition     = libvirt_network.example.ips[0].address == "10.103.0.1"
+    error_message = "Host address should be the first address of network_cidr"
+  }
+
+  assert {
+    condition     = libvirt_network.example.ips[0].dhcp.ranges[0].start == "10.103.0.100"
+    error_message = "DHCP range should start at .100"
+  }
 
   assert {
     condition     = libvirt_pool.example.name == "tf-103-pool"
@@ -69,13 +46,47 @@ run "plan_with_defaults" {
   }
 
   assert {
-    condition     = libvirt_domain.example.memory == 1024
-    error_message = "Default VM memory should be 1024 MB"
+    condition     = libvirt_domain.example.memory == 1024 && libvirt_domain.example.memory_unit == "MiB"
+    error_message = "Default VM memory should be 1024 MiB"
   }
 
   assert {
     condition     = libvirt_domain.example.vcpu == 1
     error_message = "Default vCPU count should be 1"
+  }
+
+  assert {
+    condition     = libvirt_domain.example.running == true
+    error_message = "The VM should be started after creation"
+  }
+}
+
+run "plan_attaches_devices" {
+  command = plan
+
+  assert {
+    condition     = length(libvirt_domain.example.devices.disks) == 2
+    error_message = "VM should have a system disk and a cloud-init CD-ROM"
+  }
+
+  assert {
+    condition     = libvirt_domain.example.devices.disks[0].source.volume.volume == "tf-103-disk.qcow2"
+    error_message = "First disk should be the VM's own volume"
+  }
+
+  assert {
+    condition     = libvirt_domain.example.devices.disks[1].device == "cdrom"
+    error_message = "Second disk should be the cloud-init CD-ROM"
+  }
+
+  assert {
+    condition     = length(libvirt_domain.example.devices.interfaces) == 1
+    error_message = "VM should have exactly one network interface"
+  }
+
+  assert {
+    condition     = libvirt_domain.example.devices.interfaces[0].source.network.network == "tf-103-network"
+    error_message = "Interface should be attached to the example network"
   }
 }
 
@@ -86,11 +97,17 @@ run "plan_with_custom_project_name" {
     project_name = "my-project"
     memory_mb    = 2048
     vcpu_count   = 2
+    network_cidr = "192.168.150.0/24"
   }
 
   assert {
     condition     = libvirt_network.example.name == "my-project-network"
     error_message = "Network name should use custom project_name"
+  }
+
+  assert {
+    condition     = libvirt_network.example.ips[0].address == "192.168.150.1"
+    error_message = "Host address should follow a custom network_cidr"
   }
 
   assert {
@@ -125,4 +142,14 @@ run "plan_validates_project_name_format" {
     condition     = libvirt_network.example.name == "valid-name-123-network"
     error_message = "Alphanumeric project names with hyphens should be accepted"
   }
+}
+
+run "reject_invalid_cidr" {
+  command = plan
+
+  variables {
+    network_cidr = "not-a-cidr"
+  }
+
+  expect_failures = [var.network_cidr]
 }

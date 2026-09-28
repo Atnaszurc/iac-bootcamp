@@ -26,10 +26,12 @@
 #
 # CORE TRAINING (local/libvirt providers — command = plan, no daemon needed):
 #   TF-101 (all), TF-102 (all + 6-deprecated-attribute), TF-103 (all), TF-104 (all)
-#   TF-201/moved-blocks, TF-201/dynamic-module-sources, TF-202 (all), TF-203 (all), TF-204/removed-blocks, TF-204/identity-import
-#   TF-301/3-sensitive-values, TF-301/4-cross-variable-validation, TF-301/5-ephemeral-values, TF-301/6-output-type-constraints
-#   TF-302/3-lifecycle-arguments, TF-302/4-write-only-attributes, TF-302/5-deprecation-warnings
+#   TF-201/moved-blocks, TF-201/dynamic-module-sources, TF-202 (all), TF-203 (all), TF-204/removed-blocks
+#   TF-301 (all, 1-7), TF-302 (all, 1-5), TF-303
 #   TF-305/1-workspaces, TF-306 (all + 5-type-conversion)
+#   TF-307 (actions — command = apply with the local provider, writes only to example/out/)
+#   TF-304 (opa test on the policies; skipped when opa isn't installed)
+#   TF-405 components (ordinary modules: random + terraform_data, no HCP Terraform needed)
 #
 # CLOUD MODULES (mock_provider — no credentials needed):
 #   AWS-201, AWS-202, AWS-203, AWS-204
@@ -40,6 +42,7 @@
 #
 # SKIPPED (require live credentials or remote backend):
 #   TF-305/2-remote-backends, TF-305/3-remote-state-sharing  → Remote backend
+#   TF-204/identity-import, TF-307/query-example             → Moto (need a running AWS API)
 #   TF-401, TF-402, TF-403, TF-404                           → HCP Terraform
 # =============================================================================
 
@@ -96,13 +99,17 @@ TESTABLE_EXAMPLES=(
 
   "TF-200-modules/TF-204-import-migration/example"
   "TF-200-modules/TF-204-import-migration/removed-blocks/example"
-  "TF-200-modules/TF-204-import-migration/identity-import/example"
 
   # ── TF-300: Advanced ────────────────────────────────────────────────────────
+  "TF-300-advanced/TF-301-validation/1-variable-conditions/example"
+  "TF-300-advanced/TF-301-validation/2-advanced-functions/example"
   "TF-300-advanced/TF-301-validation/3-sensitive-values/example"
   "TF-300-advanced/TF-301-validation/4-cross-variable-validation/example"
   "TF-300-advanced/TF-301-validation/5-ephemeral-values/example"
   "TF-300-advanced/TF-301-validation/6-output-type-constraints/example"
+  "TF-300-advanced/TF-301-validation/7-capturing-ephemeral-values/example"
+  "TF-300-advanced/TF-302-conditions-checks/1-pre-postconditions/example"
+  "TF-300-advanced/TF-302-conditions-checks/2-check-blocks/example"
   "TF-300-advanced/TF-302-conditions-checks/3-lifecycle-arguments/example"
   "TF-300-advanced/TF-302-conditions-checks/4-write-only-attributes/example"
   "TF-300-advanced/TF-302-conditions-checks/5-deprecation-warnings/example"
@@ -113,6 +120,14 @@ TESTABLE_EXAMPLES=(
   "TF-300-advanced/TF-306-functions/3-filesystem-functions/example"
   "TF-300-advanced/TF-306-functions/4-encoding-functions/example"
   "TF-300-advanced/TF-306-functions/5-type-conversion/example"
+  "TF-300-advanced/TF-307-query-actions/example"
+
+  # ── OPA policies (opa test; skipped when opa isn't installed) ───────────────
+  "TF-300-advanced/TF-304-policy-code/example"
+
+  # ── Stack components (ordinary modules; random + terraform_data) ────────────
+  "TF-400-hcp-enterprise/TF-405-stacks/example/components/naming"
+  "TF-400-hcp-enterprise/TF-405-stacks/example/components/app"
 
   # ── Cloud Modules: AWS-200 (mock_provider — no credentials needed) ──────────
   "cloud-modules/AWS-200-terraform/AWS-201-setup-auth/example"
@@ -211,6 +226,27 @@ run_test() {
   if [[ ! -d "$abs_dir" ]]; then
     echo -e "  ${YELLOW}⚠ SKIP${RESET} ${rel_dir} (directory not found)"
     SKIPPED=$((SKIPPED + 1))
+    return
+  fi
+
+  # OPA policy examples: a policy/ directory instead of tests/
+  if [[ -d "${abs_dir}/policy" ]]; then
+    if ! command -v opa >/dev/null 2>&1; then
+      echo -e "  ${YELLOW}⚠ SKIP${RESET} ${rel_dir} (opa not installed)"
+      SKIPPED=$((SKIPPED + 1))
+      return
+    fi
+    echo -e "  ${CYAN}▶ RUNNING${RESET} ${rel_dir} ${CYAN}[opa]${RESET}"
+    local opa_output
+    if opa_output=$(cd "$abs_dir" && opa test policy 2>&1); then
+      echo -e "  ${GREEN}✓ PASS${RESET} ${rel_dir} ($(echo "$opa_output" | tail -1))"
+      PASSED=$((PASSED + 1))
+    else
+      echo -e "  ${RED}✗ FAIL${RESET} ${rel_dir}"
+      echo "$opa_output" | tail -20 | sed 's/^/    /'
+      FAILED=$((FAILED + 1))
+      FAILED_DIRS+=("$rel_dir")
+    fi
     return
   fi
 
@@ -373,5 +409,3 @@ print_summary
 
 # Exit with failure code if any tests failed
 [[ $FAILED -eq 0 ]]
-
-# Made with Bob

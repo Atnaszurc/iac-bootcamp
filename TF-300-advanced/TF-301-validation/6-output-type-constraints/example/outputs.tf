@@ -273,9 +273,9 @@ output "database_connection" {
     port     = number
     database = string
     ssl = optional(object({
-      enabled  = bool
+      enabled   = bool
       cert_path = optional(string)
-    }), {
+      }), {
       enabled = false
     })
   })
@@ -459,7 +459,7 @@ output "database_credentials" {
   })
   value = {
     username = terraform_data.database.output.username
-    password = "super-secret-password"  # In real scenario, from secure source
+    password = "super-secret-password" # In real scenario, from secure source
     endpoint = terraform_data.database.output.endpoint
   }
   sensitive = true

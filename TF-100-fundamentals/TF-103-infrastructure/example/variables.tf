@@ -9,6 +9,17 @@ variable "project_name" {
   }
 }
 
+variable "network_cidr" {
+  description = "CIDR block for the VM network"
+  type        = string
+  default     = "10.103.0.0/24"
+
+  validation {
+    condition     = can(cidrnetmask(var.network_cidr))
+    error_message = "network_cidr must be a valid IPv4 CIDR block (e.g. 10.103.0.0/24)."
+  }
+}
+
 variable "base_image_url" {
   description = "URL or local path to the base cloud image (qcow2 format)"
   type        = string
@@ -18,7 +29,7 @@ variable "base_image_url" {
 variable "disk_size_bytes" {
   description = "VM disk size in bytes (default: 10 GB)"
   type        = number
-  default     = 10737418240  # 10 GB
+  default     = 10737418240 # 10 GB
 }
 
 variable "memory_mb" {

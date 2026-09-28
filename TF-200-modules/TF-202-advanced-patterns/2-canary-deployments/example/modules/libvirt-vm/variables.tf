@@ -3,23 +3,23 @@
 # =============================================================================
 
 variable "pool_name" {
-  description = "Name of this deployment pool (e.g. 'stable', 'canary'). Used as a prefix for all resource names."
+  description = "Name of this deployment pool (e.g. 'blue', 'green'). Used as a prefix for all resource names."
   type        = string
 }
 
 variable "base_image_url" {
-  description = "URL or local path to the base cloud image (qcow2 format)."
+  description = "URL or local path to the base cloud image (qcow2 format). Changing it rolls the pool to a new generation."
   type        = string
 }
 
 variable "memory_mb" {
-  description = "RAM allocated to each VM in this pool (MiB)."
+  description = "RAM allocated to each VM in this pool (MiB). Changing it rolls the pool to a new generation."
   type        = number
-  default     = 512
+  default     = 1024
 }
 
 variable "vcpu_count" {
-  description = "Number of vCPUs for each VM in this pool."
+  description = "Number of vCPUs for each VM in this pool. Changing it rolls the pool to a new generation."
   type        = number
   default     = 1
 }
@@ -31,9 +31,9 @@ variable "vm_count" {
 }
 
 variable "disk_size_bytes" {
-  description = "Disk size for each VM volume in bytes (default 5 GiB)."
+  description = "Disk size for each VM volume in bytes (default 10 GiB)."
   type        = number
-  default     = 5368709120 # 5 GiB
+  default     = 10737418240 # 10 GiB
 }
 
 variable "ssh_public_key" {
@@ -46,7 +46,7 @@ variable "storage_pool" {
   type        = string
 }
 
-variable "network_id" {
-  description = "Name of the libvirt network to attach VMs to (in 0.9.3, use network name not ID)."
+variable "network_name" {
+  description = "Name of the libvirt network to attach VMs to. Interfaces reference networks by name, not ID."
   type        = string
 }

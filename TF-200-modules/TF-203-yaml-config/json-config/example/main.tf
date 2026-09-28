@@ -55,13 +55,13 @@ resource "local_file" "server_configs" {
 resource "local_file" "deployment_manifest" {
   # jsonencode() converts a Terraform value to a JSON string
   content = jsonencode({
-    generated_at    = timestamp()
-    environment     = local.config.environment
-    total_servers   = length(local.config.servers)
-    enabled_servers = length(local.enabled_servers)
+    generated_at     = timestamp()
+    environment      = local.config.environment
+    total_servers    = length(local.config.servers)
+    enabled_servers  = length(local.enabled_servers)
     disabled_servers = length(local.all_servers) - length(local.enabled_servers)
-    server_names    = keys(local.enabled_servers)
-    tags            = local.config.tags
+    server_names     = keys(local.enabled_servers)
+    tags             = local.config.tags
   })
   filename = "${path.module}/deployment-manifest.json"
 }

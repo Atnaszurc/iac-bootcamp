@@ -123,7 +123,7 @@ resource "terraform_data" "server_info" {
   # Store any value — accessible as self.output
   input = {
     name    = libvirt_domain.web.name
-    ip      = libvirt_domain.web.network_interface[0].addresses[0]
+    ip      = data.libvirt_domain_interface_addresses.web.interfaces[0].addrs[0].addr
     created = timestamp()
   }
 }
@@ -132,6 +132,8 @@ output "server_info" {
   value = terraform_data.server_info.output
 }
 ```
+
+> 🆕 **Terraform 1.16+**: `terraform_data` also has a `store` block whose write-only `input` accepts *ephemeral* values (like a generated password) and saves a copy in state. See [TF-301 Section 7: Capturing Ephemeral Values](../../../TF-300-advanced/TF-301-validation/7-capturing-ephemeral-values/README.md).
 
 ### Triggering Re-runs
 
@@ -196,7 +198,7 @@ resource "terraform_data" "configure" {
 
     environment = {
       VM_NAME = libvirt_domain.web.name
-      VM_IP   = libvirt_domain.web.network_interface[0].addresses[0]
+      VM_IP   = data.libvirt_domain_interface_addresses.web.interfaces[0].addrs[0].addr
       ENV     = var.environment
     }
 

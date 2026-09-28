@@ -82,14 +82,14 @@ networks:
     mode: "nat"
     cidr: "10.10.0.0/24"
     autostart: true
-  
+
   - name: "app-network"
     mode: "nat"
     cidr: "10.20.0.0/24"
     autostart: true
-  
+
   - name: "db-network"
-    mode: "nat"
+    mode: "isolated" # no route out; only VMs on this network and the host
     cidr: "10.30.0.0/24"
     autostart: true
 ```
@@ -102,7 +102,7 @@ terraform {
   required_providers {
     libvirt = {
       source  = "dmacvicar/libvirt"
-      version = "~> 0.7"
+      version = "~> 0.9"
     }
   }
 }
@@ -119,19 +119,29 @@ locals {
 # Create networks from YAML
 resource "libvirt_network" "networks" {
   for_each = { for net in local.config.networks : net.name => net }
-  
+
   name      = each.value.name
-  mode      = each.value.mode
-  addresses = [each.value.cidr]
   autostart = each.value.autostart
-  
-  dns {
-    enabled = true
-  }
-  
-  dhcp {
-    enabled = true
-  }
+
+  # "isolated" in YAML means: no forward attribute at all
+  forward = each.value.mode == "isolated" ? null : { mode = each.value.mode }
+
+  dns = { enable = "yes" }
+
+  ips = [
+    {
+      address = cidrhost(each.value.cidr, 1)
+      prefix  = tonumber(split("/", each.value.cidr)[1])
+      dhcp = {
+        ranges = [
+          {
+            start = cidrhost(each.value.cidr, 100)
+            end   = cidrhost(each.value.cidr, 200)
+          }
+        ]
+      }
+    }
+  ]
 }
 
 # Outputs
@@ -143,11 +153,11 @@ output "network_ids" {
   }
 }
 
-output "network_bridges" {
-  description = "Map of network names to bridge names"
+output "network_modes" {
+  description = "Map of network names to forwarding mode"
   value = {
     for name, net in libvirt_network.networks :
-    name => net.bridge
+    name => try(net.forward.mode, "isolated")
   }
 }
 ```
@@ -203,7 +213,7 @@ networks:
 
 storage:
   pool_path: "/var/lib/libvirt/images/prod"
-  base_image: "/var/lib/libvirt/images/ubuntu-22.04.qcow2"
+  base_image_url: "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
 
 virtual_machines:
   - name: "web-01"
@@ -260,7 +270,7 @@ terraform {
   required_providers {
     libvirt = {
       source  = "dmacvicar/libvirt"
-      version = "~> 0.7"
+      version = "~> 0.9"
     }
   }
 }
@@ -272,89 +282,157 @@ provider "libvirt" {
 # Parse YAML configuration
 locals {
   config = yamldecode(file("${path.module}/config/infrastructure.yaml"))
-  
-  # Create network map for easy lookup
-  network_map = {
-    for tier, net in local.config.networks :
-    tier => net
-  }
+
+  # VM name => VM definition, used by every for_each below
+  vms = { for vm in local.config.virtual_machines : vm.name => vm }
 }
 
 # Create networks
 resource "libvirt_network" "tiers" {
   for_each = local.config.networks
-  
+
   name      = each.value.name
-  mode      = each.value.mode
-  addresses = [each.value.cidr]
   autostart = true
-  
-  dns {
-    enabled = true
-  }
-  
-  dhcp {
-    enabled = true
-  }
+  forward   = { mode = each.value.mode }
+  dns       = { enable = "yes" }
+
+  ips = [
+    {
+      address = cidrhost(each.value.cidr, 1)
+      prefix  = tonumber(split("/", each.value.cidr)[1])
+      dhcp = {
+        ranges = [
+          {
+            start = cidrhost(each.value.cidr, 100)
+            end   = cidrhost(each.value.cidr, 200)
+          }
+        ]
+      }
+    }
+  ]
 }
 
 # Create storage pool
 resource "libvirt_pool" "main" {
-  name = "${local.config.environment}-pool"
-  type = "dir"
-  path = local.config.storage.pool_path
+  name   = "${local.config.environment}-pool"
+  type   = "dir"
+  target = { path = local.config.storage.pool_path }
 }
 
-# Create volumes for VMs
-resource "libvirt_volume" "vm_disks" {
-  for_each = { for vm in local.config.virtual_machines : vm.name => vm }
-  
-  name   = "${each.key}.qcow2"
-  pool   = libvirt_pool.main.name
-  source = local.config.storage.base_image
-  size   = each.value.disk_size_gb * 1073741824 # Convert GB to bytes
-  format = "qcow2"
-}
-
-# Create cloud-init disks
-resource "libvirt_cloudinit_disk" "init" {
-  for_each = { for vm in local.config.virtual_machines : vm.name => vm }
-  
-  name = "${each.key}-init.iso"
+# Base image, downloaded once and shared by all VMs
+resource "libvirt_volume" "base" {
+  name = "${local.config.environment}-base.qcow2"
   pool = libvirt_pool.main.name
-  
-  user_data = templatefile("${path.module}/templates/cloud-init.tpl", {
+  create = {
+    content = { url = local.config.storage.base_image_url }
+  }
+  target = { format = { type = "qcow2" } }
+}
+
+# Create volumes for VMs (copy-on-write clones of the base image)
+resource "libvirt_volume" "vm_disks" {
+  for_each = local.vms
+
+  name     = "${each.key}.qcow2"
+  pool     = libvirt_pool.main.name
+  capacity = each.value.disk_size_gb * 1073741824 # Convert GB to bytes
+  backing_store = {
+    path   = libvirt_volume.base.path
+    format = { type = "qcow2" }
+  }
+  target = { format = { type = "qcow2" } }
+}
+
+# Create cloud-init disks ...
+resource "libvirt_cloudinit_disk" "init" {
+  for_each = local.vms
+
+  name = "${each.key}-init.iso"
+  user_data = templatefile("${path.module}/templates/cloud-init.tftpl", {
     hostname = each.key
     packages = each.value.packages
   })
+  meta_data = yamlencode({
+    instance-id    = each.key
+    local-hostname = each.key
+  })
+}
+
+# ... and upload them to the pool
+resource "libvirt_volume" "cloudinit" {
+  for_each = local.vms
+
+  name = "${each.key}-init.iso"
+  pool = libvirt_pool.main.name
+  create = {
+    content = { url = libvirt_cloudinit_disk.init[each.key].path }
+  }
 }
 
 # Create VMs
 resource "libvirt_domain" "vms" {
-  for_each = { for vm in local.config.virtual_machines : vm.name => vm }
-  
-  name   = each.key
-  memory = each.value.memory_mb
-  vcpu   = each.value.vcpu_count
-  
-  cloudinit = libvirt_cloudinit_disk.init[each.key].id
-  
-  network_interface {
-    network_id     = libvirt_network.tiers[each.value.tier].id
-    wait_for_lease = true
+  for_each = local.vms
+
+  name        = each.key
+  memory      = each.value.memory_mb
+  memory_unit = "MiB"
+  vcpu        = each.value.vcpu_count
+  type        = "kvm"
+  running     = true
+  autostart   = true
+
+  os = {
+    type         = "hvm"
+    type_arch    = "x86_64"
+    type_machine = "q35"
   }
-  
-  disk {
-    volume_id = libvirt_volume.vm_disks[each.key].id
+
+  devices = {
+    disks = [
+      {
+        source = {
+          volume = {
+            pool   = libvirt_volume.vm_disks[each.key].pool
+            volume = libvirt_volume.vm_disks[each.key].name
+          }
+        }
+        target = { dev = "vda", bus = "virtio" }
+        driver = { type = "qcow2" }
+      },
+      {
+        device = "cdrom"
+        source = {
+          volume = {
+            pool   = libvirt_volume.cloudinit[each.key].pool
+            volume = libvirt_volume.cloudinit[each.key].name
+          }
+        }
+        target = { dev = "sda", bus = "sata" }
+      }
+    ]
+
+    interfaces = [
+      {
+        model = { type = "virtio" }
+        # The tier in the YAML picks the network
+        source      = { network = { network = libvirt_network.tiers[each.value.tier].name } }
+        wait_for_ip = { source = "lease" }
+      }
+    ]
+
+    consoles = [
+      {
+        target = { type = "serial", port = 0 }
+      }
+    ]
   }
-  
-  console {
-    type        = "pty"
-    target_type = "serial"
-    target_port = "0"
-  }
-  
-  autostart = true
+}
+
+data "libvirt_domain_interface_addresses" "vms" {
+  for_each = libvirt_domain.vms
+
+  domain = each.value.name
+  source = "lease"
 }
 
 # Outputs organized by tier
@@ -363,25 +441,24 @@ output "infrastructure_summary" {
   value = {
     environment = local.config.environment
     region      = local.config.region
-    
+
     networks = {
       for tier, net in libvirt_network.tiers :
       tier => {
-        name   = net.name
-        id     = net.id
-        bridge = net.bridge
+        name = net.name
+        id   = net.id
+        cidr = local.config.networks[tier].cidr
       }
     }
-    
+
     vms_by_tier = {
       for tier in keys(local.config.networks) :
       tier => [
-        for vm_name, vm in libvirt_domain.vms :
-        {
-          name = vm_name
-          ip   = try(vm.network_interface[0].addresses[0], "")
+        for name, vm in local.vms : {
+          name = name
+          ip   = try(data.libvirt_domain_interface_addresses.vms[name].interfaces[0].addrs[0].addr, null)
         }
-        if local.config.virtual_machines[index(local.config.virtual_machines.*.name, vm_name)].tier == tier
+        if vm.tier == tier
       ]
     }
   }
@@ -390,8 +467,9 @@ output "infrastructure_summary" {
 
 ### Cloud-Init Template
 
+Save as `templates/cloud-init.tftpl`. Don't add a comment above `#cloud-config`: cloud-init only reads the file as cloud-config when that is the very first line.
+
 ```yaml
-# templates/cloud-init.tpl
 #cloud-config
 hostname: ${hostname}
 users:
@@ -402,8 +480,6 @@ packages:
 %{ for package in packages ~}
   - ${package}
 %{ endfor ~}
-runcmd:
-  - echo "Setup complete for ${hostname}"
 ```
 
 ### Key Takeaways
@@ -996,7 +1072,7 @@ locals {
 ```yaml
 # config/common.yaml
 storage:
-  base_image: "/var/lib/libvirt/images/ubuntu-22.04.qcow2"
+  base_image_url: "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
   
 defaults:
   memory_mb: 1024

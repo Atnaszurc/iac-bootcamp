@@ -430,8 +430,8 @@ resource "google_sql_database_instance" "main" {
     }
 
     maintenance_window {
-      day          = 7  # Sunday
-      hour         = 3  # 3 AM
+      day          = 7 # Sunday
+      hour         = 3 # 3 AM
       update_track = "stable"
     }
   }

@@ -22,7 +22,7 @@ run "ephemeral_password_no_token" {
   command = plan
 
   variables {
-    db_password = "SecurePass123!"  # ephemeral — satisfies length >= 8
+    db_password = "SecurePass123!" # ephemeral — satisfies length >= 8
     app_name    = "test-app"
     environment = "dev"
     db_host     = "db.test.internal"
@@ -70,7 +70,7 @@ run "ephemeral_password_with_token" {
     db_password = "AnotherSecret456!"
     app_name    = "api-app"
     environment = "staging"
-    api_token   = "tok-abc123xyz"  # ephemeral — provided this time
+    api_token   = "tok-abc123xyz" # ephemeral — provided this time
   }
 
   assert {

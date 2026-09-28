@@ -4,7 +4,7 @@ terraform {
 
 # Demonstrate using both new and deprecated variables
 resource "local_file" "config_new" {
-  content = <<-EOT
+  content  = <<-EOT
     Configuration using NEW variables:
     Instance Type: ${local.effective_instance_type}
     Environment: ${local.effective_environment}
@@ -17,7 +17,7 @@ resource "local_file" "config_new" {
 
 # Show what happens when using deprecated variables directly
 resource "local_file" "config_deprecated" {
-  content = <<-EOT
+  content  = <<-EOT
     Configuration using DEPRECATED variables (will show warnings):
     Old Instance Type: ${var.old_instance_type}
     Env: ${var.env}
@@ -31,7 +31,7 @@ resource "local_file" "config_deprecated" {
 
 # Best practice: Use effective values that handle both old and new
 resource "local_file" "config_effective" {
-  content = <<-EOT
+  content  = <<-EOT
     Effective Configuration (handles both old and new):
     Instance Type: ${local.effective_instance_type}
     Environment: ${local.effective_environment}
@@ -46,8 +46,8 @@ resource "local_file" "config_effective" {
 # Example: Conditional resource based on effective values
 resource "local_file" "monitoring_config" {
   count = local.effective_monitoring ? 1 : 0
-  
-  content = <<-EOT
+
+  content  = <<-EOT
     Monitoring Configuration
     Environment: ${local.effective_environment}
     Instance Type: ${local.effective_instance_type}

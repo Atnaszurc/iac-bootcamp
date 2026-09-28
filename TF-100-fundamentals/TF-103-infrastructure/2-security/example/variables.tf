@@ -4,6 +4,12 @@ variable "project_name" {
   default     = "tf-103"
 }
 
+variable "network_cidr" {
+  description = "CIDR block for the secure network"
+  type        = string
+  default     = "10.30.0.0/24"
+}
+
 variable "base_image_url" {
   description = "URL or local path to the base cloud image (qcow2 format)"
   type        = string

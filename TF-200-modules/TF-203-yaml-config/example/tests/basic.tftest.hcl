@@ -1,10 +1,36 @@
 # TF-203 Test: YAML-Driven Configuration — libvirt VMs defined in vms.yaml
 # Uses: command = plan (libvirt requires a running daemon for apply)
-# Provider: dmacvicar/libvirt
+# Provider: dmacvicar/libvirt (mocked — no libvirt daemon required)
 # Run: terraform test (from the example/ directory)
 #
 # Teaching focus: yamldecode(), locals with for_each, YAML-driven resource creation
 # The vms.yaml file defines 3 VMs: web-server, db-server, cache-server
+
+mock_provider "libvirt" {}
+
+run "plan_yaml_values_reach_resources" {
+  command = plan
+
+  assert {
+    condition     = libvirt_domain.vm["db-server"].memory == 2048 && libvirt_domain.vm["db-server"].memory_unit == "MiB"
+    error_message = "db-server should get memory_mb from vms.yaml, in MiB"
+  }
+
+  assert {
+    condition     = libvirt_network.vm["cache-server"].ips[0].address == "10.70.3.1"
+    error_message = "Each VM network should be built from its network_cidr in vms.yaml"
+  }
+
+  assert {
+    condition     = libvirt_domain.vm["web-server"].devices.interfaces[0].source.network.network == "web-server-net"
+    error_message = "Each VM should be attached to its own network"
+  }
+
+  assert {
+    condition     = length(libvirt_domain.vm["web-server"].devices.disks) == 2
+    error_message = "Each VM should have a system disk and a cloud-init CD-ROM"
+  }
+}
 
 run "plan_yaml_driven_vms" {
   command = plan

@@ -18,8 +18,8 @@ output "service_registry_path" {
 output "all_managed_files" {
   description = "Map of config name to file path — all files now managed by Terraform"
   value = {
-    app_config      = local_file.app_config.filename
-    database_config = local_file.database_config.filename
+    app_config       = local_file.app_config.filename
+    database_config  = local_file.database_config.filename
     service_registry = local_file.service_registry.filename
   }
 }
@@ -27,8 +27,8 @@ output "all_managed_files" {
 output "import_ids" {
   description = "The IDs that would be used in import blocks for each resource"
   value = {
-    app_config      = local_file.app_config.id
-    database_config = local_file.database_config.id
+    app_config       = local_file.app_config.id
+    database_config  = local_file.database_config.id
     service_registry = local_file.service_registry.id
   }
 }

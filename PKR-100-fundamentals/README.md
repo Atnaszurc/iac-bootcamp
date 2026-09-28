@@ -516,19 +516,51 @@ After PKR-100, you can:
 # Packer builds the image
 # packer build ubuntu-web.pkr.hcl
 
-# Terraform uses the image
+# Terraform imports the Packer image into a pool (url accepts a local path) ...
+resource "libvirt_volume" "web_image" {
+  name = "ubuntu-web-v1.0.0.qcow2"
+  pool = "default"
+  create = {
+    content = { url = "/var/lib/libvirt/images/ubuntu-web-v1.0.0.qcow2" }
+  }
+  target = { format = { type = "qcow2" } }
+}
+
+# ... and gives each VM a copy-on-write disk on top of it
 resource "libvirt_volume" "web" {
-  name   = "web-server"
-  source = "/var/lib/libvirt/images/ubuntu-web-v1.0.0.qcow2"
+  name     = "web-server.qcow2"
+  pool     = "default"
+  capacity = 21474836480 # 20 GB
+  backing_store = {
+    path   = libvirt_volume.web_image.path
+    format = { type = "qcow2" }
+  }
+  target = { format = { type = "qcow2" } }
 }
 
 resource "libvirt_domain" "web" {
-  name   = "web-server"
-  memory = "2048"
-  vcpu   = 2
+  name        = "web-server"
+  memory      = 2048
+  memory_unit = "MiB"
+  vcpu        = 2
+  type        = "kvm"
+  running     = true
+  os          = { type = "hvm", type_arch = "x86_64", type_machine = "q35" }
 
-  disk {
-    volume_id = libvirt_volume.web.id
+  devices = {
+    disks = [
+      {
+        source = { volume = { pool = libvirt_volume.web.pool, volume = libvirt_volume.web.name } }
+        target = { dev = "vda", bus = "virtio" }
+        driver = { type = "qcow2" }
+      }
+    ]
+    interfaces = [
+      {
+        model  = { type = "virtio" }
+        source = { network = { network = "default" } }
+      }
+    ]
   }
 }
 ```

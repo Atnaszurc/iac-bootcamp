@@ -1,9 +1,9 @@
 # TF-400: HCP Terraform & Enterprise Features
 
 **Level**: 400 (Expert)
-**Duration**: 6 hours
+**Duration**: 6.5 hours
 **Prerequisites**: TF-300 (all courses), TF-305 (Workspaces & Remote State)
-**Cost**: Free tier available (Sentinel requires Plus/Enterprise; Stacks requires HCP Terraform)
+**Cost**: Free tier available (Sentinel requires Plus/Enterprise; Stacks run on HCP Terraform and their resources count toward resources under management)
 
 ---
 
@@ -70,9 +70,9 @@ TF-400: HCP Terraform & Enterprise Features (5 hours)
 │   ├── Testing policies with mock data
 │   └── Policy sets and VCS-connected policies
 │
-└── TF-405: Terraform Stacks (1h) ✨ NEW — Terraform 1.13+
+└── TF-405: Terraform Stacks (1.5h) — Terraform 1.13+
     ├── What are Stacks? Components and Deployments
-    ├── .tfstack.hcl and .tfdeploy.hcl file types
+    ├── .tfcomponent.hcl and .tfdeploy.hcl file types (GA syntax)
     ├── Stacks vs Workspaces vs separate configurations
     ├── Provider configuration in Stacks
     ├── terraform stacks CLI commands
@@ -121,7 +121,8 @@ TF-400-hcp-enterprise/
 │           └── main.tf
 │
 └── TF-405-stacks/
-    └── README.md                          # Stacks overview (conceptual — requires HCP Terraform)
+    ├── README.md                          # Stacks: concepts, local validation, deploying, cost
+    └── example/                           # Minimal Stack: 2 components, 2 deployments, 2 billable resources
 ```
 
 ---
@@ -147,7 +148,7 @@ The HCP Terraform free tier includes:
 
 **For TF-401, TF-402, TF-403**: Free tier is sufficient.
 **For TF-404 (Sentinel)**: Requires Plus/Business tier or Terraform Enterprise.
-**For TF-405 (Stacks)**: Requires HCP Terraform with Stacks enabled — check current [pricing](https://www.hashicorp.com/products/terraform/pricing).
+**For TF-405 (Stacks)**: HCP Terraform's documentation lists Stacks on every edition, including Free; auto-approval rules for deployment groups need Premium. Stack resources count toward resources under management, so the example is kept to 2 — check current [pricing](https://www.hashicorp.com/products/terraform/pricing).
 
 ---
 
@@ -169,7 +170,7 @@ The HCP Terraform free tier includes:
 | Stack | Multiple Terraform configs managed as a unit |
 | Component | A Terraform config within a Stack |
 | Deployment | An instance of a Stack (like a workspace for the whole Stack) |
-| `.tfstack.hcl` | Stack definition file (components, providers) |
+| `.tfcomponent.hcl` | Stack component configuration (components, providers, variables, outputs); `.tfstack.hcl` was the beta name |
 | `.tfdeploy.hcl` | Deployment configuration file |
 
 ---
@@ -182,7 +183,7 @@ The HCP Terraform free tier includes:
 2. **TF-402** — Connect to GitHub, configure VCS-driven workflow
 3. **TF-403** — Set up teams, configure OIDC dynamic credentials
 4. **TF-404** — Write Sentinel policies, configure policy sets
-5. **TF-405** — Learn Terraform Stacks for multi-config orchestration (conceptual + design)
+5. **TF-405** — Build a minimal Terraform Stack, validate it locally, deploy it, and learn what it costs to grow
 
 ### Time Estimates
 
@@ -192,8 +193,8 @@ The HCP Terraform free tier includes:
 | TF-402 | 1.5 hours | 45 min |
 | TF-403 | 1 hour | 30 min |
 | TF-404 | 1 hour | 30 min |
-| TF-405 | 1 hour | 30 min (conceptual) |
-| **Total** | **6 hours** | **3 hours** |
+| TF-405 | 1.5 hours | 45 min |
+| **Total** | **6.5 hours** | **3.25 hours** |
 
 ---
 
@@ -202,7 +203,7 @@ The HCP Terraform free tier includes:
 ### Testing Limitations
 - **TF-401, TF-402, TF-403**: Can be fully tested with a free HCP Terraform account
 - **TF-404 (Sentinel)**: Requires HCP Terraform Plus/Business or Terraform Enterprise
-- **TF-405 (Stacks)**: Requires HCP Terraform with Stacks enabled; the module is conceptual/awareness-focused
+- **TF-405 (Stacks)**: Writing, validating (`terraform stacks validate`) and testing the components works locally; deploying needs HCP Terraform
 - The `tfe` provider examples (TF-402, TF-403, TF-404) require an organization owner API token
 
 ### Meta-Terraform Pattern
@@ -221,7 +222,7 @@ Several examples in this course use the `tfe` provider to manage HCP Terraform r
 | [TF-402](TF-402-remote-runs/README.md) | Remote Runs & VCS Integration | 1.5h |
 | [TF-403](TF-403-security-access/README.md) | Security & Access Control | 1h |
 | [TF-404](TF-404-sentinel-policies/README.md) | Sentinel Policy as Code | 1h |
-| [TF-405](TF-405-stacks/README.md) | Terraform Stacks (1.13+) | 1h |
+| [TF-405](TF-405-stacks/README.md) | Terraform Stacks (1.13+) | 1.5h |
 
 ---
 

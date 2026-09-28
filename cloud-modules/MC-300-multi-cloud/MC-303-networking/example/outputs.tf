@@ -113,9 +113,9 @@ output "vpn_connectivity" {
       aws_bgp_asn         = var.aws_bgp_asn
     }
     azure_to_aws = {
-      gateway_id      = azurerm_virtual_network_gateway.main.id
-      connection_id   = azurerm_virtual_network_gateway_connection.to_aws.id
-      azure_bgp_asn   = var.azure_bgp_asn
+      gateway_id    = azurerm_virtual_network_gateway.main.id
+      connection_id = azurerm_virtual_network_gateway_connection.to_aws.id
+      azure_bgp_asn = var.azure_bgp_asn
     }
   }
 }

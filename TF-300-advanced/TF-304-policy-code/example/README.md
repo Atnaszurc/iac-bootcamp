@@ -1,117 +1,48 @@
 # TF-304: Policy as Code — Example
 
-This example demonstrates OPA (Open Policy Agent) policies for Terraform plan evaluation.
+OPA policies for a small libvirt configuration. The [module README](../README.md) explains every part; this page is the quick reference.
 
-## Structure
+## Files
 
-```
-example/
-├── plan.json              # Sample Terraform plan JSON (input for OPA)
-├── policies/
-│   ├── naming.rego        # Naming convention policies
-│   └── security.rego      # Security policies
-└── tests/
-    ├── naming_test.rego   # OPA tests for naming policies
-    └── security_test.rego # OPA tests for security policies
-```
+| Path | What it is |
+|---|---|
+| `main.tf`, `variables.tf` | A network, VMs and their data disks (libvirt) |
+| `violations.tfvars` | Values that break the policies |
+| `compliant.tfvars` | Values that pass them |
+| `plan.json` | A real plan: `terraform show -json`, made with `violations.tfvars` (Terraform 1.16.4) |
+| `policy/config/data.json` | Allowed forward modes and shared networks: `data.config` |
+| `policy/terraform/libvirt/lib/` | Shared helpers: the plan (local or HCP Terraform), changes, units |
+| `policy/terraform/libvirt/naming/` | Names and owners |
+| `policy/terraform/libvirt/resources/` | Memory, vCPU and disk limits; a `warn` for many vCPUs |
+| `policy/terraform/libvirt/network/` | Forward modes; VMs only join known networks |
+| `.regal/config.yaml` | Regal (linter) settings |
 
-## Prerequisites
+Each `*_test.rego` sits next to the policy it tests.
 
-Install OPA:
-```bash
-# Linux/macOS
-curl -L -o opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64_static
-chmod +x opa
-sudo mv opa /usr/local/bin/
+## Commands
 
-# macOS (Homebrew)
-brew install opa
-
-# Windows (Chocolatey)
-choco install open-policy-agent
-
-# Verify
-opa version
-```
-
-## Running Policy Tests
+Needs OPA 1.x (tested with 1.21.0). No Terraform or libvirt needed for these:
 
 ```bash
-# Run all OPA unit tests (no input file needed — tests use inline fixtures)
-opa test policies/ tests/ -v
+opa test policy -v                     # PASS: 36/36
+opa test policy --coverage --format=json | jq .coverage   # 100
+regal lint policy                      # No violations found
 
-# Expected output:
-# data.terraform.naming.test_compliant_resource_has_no_violations: PASS
-# data.terraform.naming.test_missing_name_tag_is_violation: PASS
-# ...
-# PASS: 15/15
+# All violations in the included plan (9)
+opa eval -f raw -d policy -i plan.json '[m | some m in data.terraform.libvirt[_].deny]' | jq -r '.[]'
+
+# Advisories (1)
+opa eval -f raw -d policy -i plan.json '[m | some m in data.terraform.libvirt[_].warn]' | jq -r '.[]'
+
+# CI gate: exit code 1 when there are violations
+opa eval --fail-defined -d policy -i plan.json 'data.terraform.libvirt[_].deny[_]' > /dev/null
 ```
 
-## Evaluating Policies Against a Plan
+Make your own plan (needs Terraform and libvirt; nothing is applied):
 
 ```bash
-# Step 1: Generate a real Terraform plan JSON
-terraform plan -out=tfplan
-terraform show -json tfplan > plan.json
-
-# Step 2: Evaluate naming policy violations
-opa eval -d policies/ -i plan.json "data.terraform.naming.violations"
-
-# Step 3: Evaluate security policy violations
-opa eval -d policies/ -i plan.json "data.terraform.security.violations"
-
-# Step 4: Check if plan is allowed (no violations)
-opa eval -d policies/ -i plan.json "data.terraform.naming.allow"
-opa eval -d policies/ -i plan.json "data.terraform.security.allow"
+terraform init
+terraform plan -var-file=compliant.tfvars -out=tfplan
+terraform show -json tfplan > compliant.json
+opa eval --fail-defined -d policy -i compliant.json 'data.terraform.libvirt[_].deny[_]'   # exit code 0
 ```
-
-## Using the Sample plan.json
-
-The included `plan.json` contains **intentional violations** for learning:
-- `local_file.insecure_example` has `0777` permissions (security violation)
-- `local_file.insecure_example` has `Name = "BadName"` (naming violation)
-- `local_file.insecure_example` has `Environment = "production"` (invalid value)
-- `local_file.insecure_example` has `ManagedBy = "manual"` (security violation)
-
-```bash
-# Evaluate the sample plan — expect violations
-opa eval -d policies/ -i plan.json "data.terraform.naming.violations"
-opa eval -d policies/ -i plan.json "data.terraform.security.violations"
-```
-
-## Integrating with CI/CD
-
-```bash
-# Exit with non-zero code if violations exist (for CI/CD gates)
-opa eval -d policies/ -i plan.json \
-  --fail-defined \
-  "data.terraform.naming.deny[_]"
-
-# Or use a combined check script:
-NAMING_VIOLATIONS=$(opa eval -d policies/ -i plan.json \
-  --format raw "count(data.terraform.naming.violations)")
-
-SECURITY_VIOLATIONS=$(opa eval -d policies/ -i plan.json \
-  --format raw "count(data.terraform.security.violations)")
-
-if [ "$NAMING_VIOLATIONS" -gt 0 ] || [ "$SECURITY_VIOLATIONS" -gt 0 ]; then
-  echo "Policy violations found! Blocking deployment."
-  exit 1
-fi
-```
-
-## Policy Summary
-
-### naming.rego
-| Rule | Description |
-|------|-------------|
-| Name tag required | All resources must have a `Name` tag |
-| Name format | Must match `<env>-<type>-<name>` (e.g. `dev-vm-webserver`) |
-| Environment values | Must be one of: `dev`, `staging`, `prod` |
-
-### security.rego
-| Rule | Description |
-|------|-------------|
-| No world-writable | File permissions must not end in `7` or `6` (world-writable) |
-| ManagedBy tag | Must be set to `"terraform"` |
-| Prod Owner tag | Production resources must have an `Owner` tag |

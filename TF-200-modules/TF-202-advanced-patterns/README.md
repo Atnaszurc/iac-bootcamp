@@ -62,23 +62,17 @@ This course is organized into **2 comprehensive sections**:
 **Duration**: 60 minutes
 
 **Topics Covered**:
-- Canary deployment patterns
-- Blue-green deployment strategies
-- Nested module composition
-- Conditional resource creation
-- For_each patterns in modules
-- Module testing strategies
-- Health checks and validation
-- Rollback procedures
-- Feature flags
-- Environment-based configuration
+- Deployment pools as a `for_each` map of module instances
+- Canary rollout by shifting load balancer weights (HAProxy)
+- Blue-green cutover by adding and removing pools
+- Rolling a pool in place with `create_before_destroy`, and why it needs unique names
+- Module testing with mocked providers
 
 **Key Patterns**:
 - **Canary**: Gradual rollout to subset (10% → 50% → 100%)
 - **Blue-Green**: Two identical environments, instant switch
-- **Nested Modules**: Hierarchical composition (network → compute → app)
-- **Conditional**: Resources created based on variables
-- **For_Each**: Multiple similar resources with stable addresses
+- **For_Each**: One module instance per pool, with stable addresses
+- **Generations**: `random_id` keepers + `replace_triggered_by` so replacements get new names
 
 ---
 
@@ -169,44 +163,36 @@ module "app_cluster" {
 **Duration**: 30 minutes  
 **Difficulty**: Advanced
 
-**Objective**: Implement a canary deployment pattern with gradual rollout.
+**Objective**: Roll out Ubuntu 24.04 next to 22.04 and shift traffic gradually. This is the full lesson in [`2-canary-deployments/`](./2-canary-deployments/README.md).
 
 **Deployment Phases**:
-1. **Phase 1**: 100% stable, 0% canary
-2. **Phase 2**: 90% stable, 10% canary (monitor)
-3. **Phase 3**: 50% stable, 50% canary (monitor)
-4. **Phase 4**: 0% stable, 100% new version
+1. **Phase 1**: blue (22.04) only
+2. **Phase 2**: add green (24.04) with a low weight (monitor)
+3. **Phase 3**: shift weights towards green (monitor)
+4. **Phase 4**: remove blue
 
-**Features**:
-- Automatic instance count calculation
-- Health checks for both versions
-- Easy rollback (adjust percentage)
-- Version tracking
-
-**Example Usage**:
+**Example Usage** (`terraform.tfvars`):
 ```hcl
-module "app" {
-  source = "./modules/canary-deployment"
-  
-  app_name          = "my-app"
-  total_instances   = 5
-  enable_canary     = true
-  canary_percentage = 10  # Start with 10%
-  
-  stable_version    = "v1.0.0"
-  canary_version    = "v1.1.0"
-  stable_image_path = "/path/to/v1.0.0.qcow2"
-  canary_image_path = "/path/to/v1.1.0.qcow2"
+vm_pools = {
+  blue = {
+    base_image_url = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+    vm_count       = 2
+    weight         = 90
+  }
+  green = {
+    base_image_url = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+    vm_count       = 1
+    weight         = 10
+  }
 }
-
-# Output: 4 stable instances, 1 canary instance
 ```
 
+Terraform writes an HAProxy config with every VM and its weight. With the weights above, 190 requests split 90 / 90 / 10 across the three VMs.
+
 **Key Learning**:
-- Gradual rollout reduces risk
-- Health checks enable automated validation
-- Easy rollback by adjusting percentage
-- Clear separation of stable/canary versions
+- New versions are built next to the old ones, never on top of them
+- Rollback is a weight change, not a rebuild
+- `create_before_destroy` only works when the replacement can get a different name
 
 ---
 
@@ -435,9 +421,11 @@ variable "vms" {
 resource "libvirt_domain" "vm" {
   for_each = var.vms
   
-  name   = each.key
-  memory = each.value.memory_mb
-  vcpu   = each.value.vcpu_count
+  name        = each.key
+  memory      = each.value.memory_mb
+  memory_unit = "MiB"
+  vcpu        = each.value.vcpu_count
+  # ... type, os and devices: see TF-103
 }
 
 # Usage

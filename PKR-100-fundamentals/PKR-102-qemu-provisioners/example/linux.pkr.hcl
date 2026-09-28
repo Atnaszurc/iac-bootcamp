@@ -71,8 +71,8 @@ source "qemu" "ubuntu_22_04" {
   format           = "qcow2"
 
   # VM resources
-  memory   = var.memory_mb
-  cpus     = var.cpus
+  memory    = var.memory_mb
+  cpus      = var.cpus
   disk_size = "10G"
 
   # Accelerator — use kvm if available, tcg as fallback

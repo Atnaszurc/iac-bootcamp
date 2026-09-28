@@ -107,7 +107,7 @@ run "prod_too_few_instances_fails" {
   # Production with only 1 instance should fail validation
   variables {
     environment           = "prod"
-    instance_count        = 1   # INVALID: prod requires >= 3
+    instance_count        = 1 # INVALID: prod requires >= 3
     disk_size_gb          = 100
     enable_backups        = true
     backup_retention_days = 30
@@ -124,7 +124,7 @@ run "prod_disk_too_small_fails" {
   variables {
     environment           = "prod"
     instance_count        = 3
-    disk_size_gb          = 20   # INVALID: prod requires >= 50 GB
+    disk_size_gb          = 20 # INVALID: prod requires >= 50 GB
     enable_backups        = true
     backup_retention_days = 30
   }
@@ -142,7 +142,7 @@ run "backups_enabled_low_retention_fails" {
     instance_count        = 1
     disk_size_gb          = 10
     enable_backups        = true
-    backup_retention_days = 3   # INVALID: must be >= 7 when backups enabled
+    backup_retention_days = 3 # INVALID: must be >= 7 when backups enabled
   }
 
   expect_failures = [
@@ -154,7 +154,7 @@ run "invalid_environment_fails" {
   command = plan
   # Unknown environment value should fail
   variables {
-    environment    = "production"   # INVALID: must be dev, staging, or prod
+    environment    = "production" # INVALID: must be dev, staging, or prod
     instance_count = 1
     disk_size_gb   = 10
   }

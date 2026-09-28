@@ -68,6 +68,25 @@ resource "libvirt_network" "vm" {
 
   name      = "${each.key}-net"
   autostart = true
+
+  forward = {
+    mode = "nat"
+  }
+
+  ips = [
+    {
+      address = cidrhost(each.value.network_cidr, 1)
+      prefix  = tonumber(split("/", each.value.network_cidr)[1])
+      dhcp = {
+        ranges = [
+          {
+            start = cidrhost(each.value.network_cidr, 100)
+            end   = cidrhost(each.value.network_cidr, 200)
+          }
+        ]
+      }
+    }
+  ]
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -81,7 +100,12 @@ resource "libvirt_volume" "vm" {
   pool     = libvirt_pool.main.name
   capacity = each.value.disk_size_bytes
   backing_store = {
-    path = libvirt_volume.base.id
+    path = libvirt_volume.base.path
+    format = {
+      type = "qcow2"
+    }
+  }
+  target = {
     format = {
       type = "qcow2"
     }
@@ -135,48 +159,67 @@ resource "libvirt_volume" "cloudinit" {
 resource "libvirt_domain" "vm" {
   for_each = { for vm in local.vms : vm.name => vm }
 
-  name   = each.key
-  type   = "kvm"
-  memory = each.value.memory_mb
-  vcpu   = each.value.vcpu_count
+  name        = each.key
+  type        = "kvm"
+  memory      = each.value.memory_mb
+  memory_unit = "MiB"
+  vcpu        = each.value.vcpu_count
+  running     = true
+
+  os = {
+    type         = "hvm"
+    type_arch    = "x86_64"
+    type_machine = "q35"
+  }
 
   devices = {
-    disk = [
+    disks = [
       {
-        volume = {
-          volume = libvirt_volume.vm[each.key].id
+        source = {
+          volume = {
+            pool   = libvirt_volume.vm[each.key].pool
+            volume = libvirt_volume.vm[each.key].name
+          }
         }
         target = {
           dev = "vda"
           bus = "virtio"
         }
+        driver = {
+          type = "qcow2"
+        }
       },
       {
-        volume = {
-          volume = libvirt_volume.cloudinit[each.key].id
+        device = "cdrom"
+        source = {
+          volume = {
+            pool   = libvirt_volume.cloudinit[each.key].pool
+            volume = libvirt_volume.cloudinit[each.key].name
+          }
         }
         target = {
-          dev = "vdb"
-          bus = "virtio"
+          dev = "sda"
+          bus = "sata"
         }
       }
     ]
-    interface = [
+    interfaces = [
       {
-        network = {
-          network = libvirt_network.vm[each.key].name
-        }
         model = {
           type = "virtio"
         }
+        source = {
+          network = {
+            network = libvirt_network.vm[each.key].name
+          }
+        }
       }
     ]
-    console = [
+    consoles = [
       {
-        type = "pty"
         target = {
-          port = 0
           type = "serial"
+          port = 0
         }
       }
     ]

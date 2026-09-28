@@ -1,0 +1,4 @@
+# Written by local_file.cert
+out/
+# Your private key: keep it out of git
+*.key

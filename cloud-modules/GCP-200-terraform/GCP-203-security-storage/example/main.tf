@@ -115,7 +115,7 @@ resource "google_kms_crypto_key" "key" {
   rotation_period = var.kms_key_rotation_period
 
   lifecycle {
-    prevent_destroy = false  # Set to true in production
+    prevent_destroy = false # Set to true in production
   }
 
   labels = var.labels
@@ -158,9 +158,9 @@ resource "google_storage_bucket" "standard" {
 
   lifecycle_rule {
     condition {
-      age                   = var.lifecycle_age_days * 3
-      with_state            = "ARCHIVED"
-      num_newer_versions    = 3
+      age                = var.lifecycle_age_days * 3
+      with_state         = "ARCHIVED"
+      num_newer_versions = 3
     }
     action {
       type = "Delete"

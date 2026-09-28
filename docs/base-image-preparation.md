@@ -375,31 +375,59 @@ final_message: "VM ${hostname} is ready after $UPTIME seconds"
 #### Using Cloud-Init with Terraform
 
 ```hcl
-# Terraform example using cloud-init
-data "template_file" "cloud_init" {
-  template = file("${path.module}/cloud-init.yaml")
-  
-  vars = {
+# Terraform example using cloud-init (libvirt provider 0.9.x)
+resource "libvirt_cloudinit_disk" "commoninit" {
+  count = var.vm_count
+  name  = "cloudinit-${count.index}.iso"
+
+  # templatefile() is built in; the old template_file data source is archived
+  user_data = templatefile("${path.module}/cloud-init.yaml.tftpl", {
     hostname       = "tf-vm-${count.index + 1}"
     username       = "student"
-    ssh_public_key = file("~/.ssh/id_rsa.pub")
+    ssh_public_key = trimspace(file(pathexpand("~/.ssh/id_ed25519.pub"))) # file() doesn't expand ~
     course_id      = "TF-101"
+  })
+
+  meta_data = yamlencode({
+    instance-id    = "tf-vm-${count.index + 1}"
+    local-hostname = "tf-vm-${count.index + 1}"
+  })
+}
+
+# Upload each ISO to the pool so the VM can mount it
+resource "libvirt_volume" "cloudinit" {
+  count = var.vm_count
+  name  = "cloudinit-${count.index}.iso"
+  pool  = "default"
+  create = {
+    content = { url = libvirt_cloudinit_disk.commoninit[count.index].path }
   }
 }
 
-resource "libvirt_cloudinit_disk" "commoninit" {
-  name      = "cloudinit-${count.index}.iso"
-  user_data = data.template_file.cloud_init.rendered
-}
-
 resource "libvirt_domain" "vm" {
-  name   = "terraform-vm-${count.index + 1}"
-  memory = "2048"
-  vcpu   = 2
+  count       = var.vm_count
+  name        = "terraform-vm-${count.index + 1}"
+  memory      = 2048
+  memory_unit = "MiB"
+  vcpu        = 2
+  # ... type, running, os and the system disk: see TF-103
 
-  cloudinit = libvirt_cloudinit_disk.commoninit.id
-  
-  # ... rest of configuration
+  devices = {
+    disks = [
+      # ... system disk ...
+      {
+        # There is no cloudinit argument: attach the ISO as a CD-ROM
+        device = "cdrom"
+        source = {
+          volume = {
+            pool   = libvirt_volume.cloudinit[count.index].pool
+            volume = libvirt_volume.cloudinit[count.index].name
+          }
+        }
+        target = { dev = "sda", bus = "sata" }
+      }
+    ]
+  }
 }
 ```
 

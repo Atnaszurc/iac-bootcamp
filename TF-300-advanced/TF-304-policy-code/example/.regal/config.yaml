@@ -1,0 +1,10 @@
+# Regal (the Rego linter) settings for this example.
+# data.config comes from policy/config/data.json, which Regal can't see.
+rules:
+  imports:
+    unresolved-import:
+      except-imports:
+        - data.config
+    unresolved-reference:
+      except-paths:
+        - data.config.*

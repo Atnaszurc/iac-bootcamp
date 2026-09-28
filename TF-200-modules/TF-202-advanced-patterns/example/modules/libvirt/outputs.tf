@@ -1,6 +1,6 @@
 output "ip_address" {
-  description = "IP address assigned to the VM by DHCP (computed at apply time)"
-  value       = "IP will be assigned by DHCP at apply time"
+  description = "IP address assigned to the VM by DHCP (known after apply)"
+  value       = try(data.libvirt_domain_interface_addresses.this.interfaces[0].addrs[0].addr, null)
 }
 
 output "vm_name" {

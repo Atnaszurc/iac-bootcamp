@@ -13,7 +13,7 @@ mock_provider "aws" {
 
   mock_data "aws_region" {
     defaults = {
-      region      = "eu-west-1"  # v6: use 'region' instead of 'name'
+      region      = "eu-west-1" # v6: use 'region' instead of 'name'
       description = "Europe (Ireland)"
     }
   }

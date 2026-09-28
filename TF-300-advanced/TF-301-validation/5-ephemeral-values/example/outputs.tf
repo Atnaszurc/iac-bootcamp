@@ -17,7 +17,7 @@
 output "connection_string" {
   value       = local.connection_string
   description = "Database connection string — ephemeral, never stored in state"
-  ephemeral   = true  # Required because local.connection_string is ephemeral
+  ephemeral   = true # Required because local.connection_string is ephemeral
 }
 
 # ─────────────────────────────────────────────────────────────────────────────

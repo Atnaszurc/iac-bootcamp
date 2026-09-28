@@ -1,14 +1,17 @@
-# TF-202: Canary / Blue-Green Deployments with libvirt
-# Demonstrates: for_each over map(object), canary rollout pattern,
-#               create_before_destroy lifecycle, module composition
-# Provider: dmacvicar/libvirt (local virtualization — no cloud credentials)
-# Run: terraform init && terraform apply
+# =============================================================================
+# TF-202 Section 2: Canary and blue-green deployments with libvirt
 #
-# Pattern:
-#   - Each entry in var.vm_pools creates one VM pool (stable, canary, etc.)
-#   - Add a new pool entry  → canary VM spins up alongside stable
-#   - Remove the old entry  → stable VM is destroyed (blue-green cutover)
-#   - create_before_destroy → new VM exists before old is removed
+# Each entry in var.vm_pools is a deployment pool: a set of identical web VMs.
+#   - Add a pool       -> new VMs next to the old ones (green next to blue)
+#   - Change weights   -> shift traffic between pools (canary 10%, then 50%...)
+#   - Remove a pool    -> retire it (cutover complete)
+#
+# libvirt has no load balancer resource, so Terraform writes an HAProxy config
+# (out/haproxy.cfg) with every VM and its pool's weight. Run HAProxy on the
+# host to get a real traffic split; see the README.
+#
+# Run: terraform init && terraform apply
+# =============================================================================
 
 terraform {
   required_version = ">= 1.14"
@@ -16,6 +19,14 @@ terraform {
     libvirt = {
       source  = "dmacvicar/libvirt"
       version = "~> 0.9"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.7"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.7"
     }
   }
 }
@@ -25,35 +36,47 @@ provider "libvirt" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Shared storage pool (all VM pools share one storage pool)
+# Shared storage pool and network (all deployment pools use them)
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "libvirt_pool" "shared" {
-  name = "canary-pool"
+  name = "${var.project_name}-pool"
   type = "dir"
   target = {
-    path = "/var/lib/libvirt/images/canary"
+    path = "/var/lib/libvirt/images/${var.project_name}"
   }
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Shared network (all VM pools share one NAT network)
-# ─────────────────────────────────────────────────────────────────────────────
-
 resource "libvirt_network" "shared" {
-  name      = "canary-net"
+  name      = "${var.project_name}-net"
   autostart = true
-  
-  # Note: In 0.9.3, mode and addresses are not supported
+
+  forward = {
+    mode = "nat"
+  }
+
+  ips = [
+    {
+      address = cidrhost(var.network_cidr, 1)
+      prefix  = tonumber(split("/", var.network_cidr)[1])
+      dhcp = {
+        ranges = [
+          {
+            start = cidrhost(var.network_cidr, 100)
+            end   = cidrhost(var.network_cidr, 200)
+          }
+        ]
+      }
+    }
+  ]
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Call the VM pool module for each entry in var.vm_pools
-# Each pool entry = one deployment slot (stable, canary, v2, etc.)
+# One module instance per deployment pool
 # ─────────────────────────────────────────────────────────────────────────────
 
 module "vm_pool" {
-  source   = "./modules/libvirt-vm/"
+  source   = "./modules/libvirt-vm"
   for_each = var.vm_pools
 
   pool_name      = each.key
@@ -63,19 +86,30 @@ module "vm_pool" {
   vm_count       = each.value.vm_count
   ssh_public_key = var.ssh_public_key
   storage_pool   = libvirt_pool.shared.name
-  network_id     = libvirt_network.shared.name
+  network_name   = libvirt_network.shared.name
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Outputs
+# Load balancer config: every VM of every pool, weighted by its pool's weight
 # ─────────────────────────────────────────────────────────────────────────────
 
-output "vm_pools" {
-  description = "Map of pool names to their VM names"
-  value       = { for k, v in module.vm_pool : k => v.vm_names }
+locals {
+  backends = flatten([
+    for pool, m in module.vm_pool : [
+      for i, name in m.vm_names : {
+        name   = name
+        pool   = pool
+        ip     = m.vm_ips[i]
+        weight = var.vm_pools[pool].weight
+      }
+    ]
+  ])
 }
 
-output "active_pools" {
-  description = "Names of all active deployment pools"
-  value       = keys(module.vm_pool)
+resource "local_file" "haproxy_cfg" {
+  filename = "${path.module}/out/haproxy.cfg"
+  content = templatefile("${path.module}/templates/haproxy.cfg.tftpl", {
+    listen_port = var.lb_port
+    backends    = [for b in local.backends : b if b.ip != null]
+  })
 }

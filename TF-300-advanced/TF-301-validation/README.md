@@ -30,12 +30,13 @@ After completing TF-301, you will be able to:
 - ✅ **Type Checking**: Ensure data types are correct before use
 - ✅ **Regex Patterns**: Use regular expressions for string validation
 - ✅ **Ephemeral Values**: Use `ephemeral = true` to prevent secrets from ever touching state (1.10+)
+- ✅ **Capturing Ephemeral Values**: Deliberately persist a generated secret with `terraform_data` `store` (1.16+)
 
 ---
 
 ## 🗂️ Course Structure
 
-This course has two main sections with subdirectories:
+This course has seven sections, each in its own subdirectory:
 
 ### 1. Variable Conditions (`1-variable-conditions/`)
 
@@ -48,6 +49,8 @@ Learn to implement robust input validation using Terraform's validation blocks.
 - Cross-variable validation
 - Complex validation logic
 - Error message best practices
+
+**Hands-on**: a libvirt VM whose inputs (name, memory, network CIDR, SSH key, firewall rules) are all validated; the firewall rules become `ufw` rules through cloud-init. 15 test runs.
 
 **See**: [1-variable-conditions/README.md](1-variable-conditions/README.md)
 
@@ -64,6 +67,9 @@ Master advanced Terraform functions for error handling and data transformation.
 - Function chaining patterns
 - Conditional logic with functions
 - Error recovery strategies
+- Provider-defined functions (`provider::time::rfc3339_parse`, `duration_parse`)
+
+**Hands-on**: naming chains, subnet plans with `cidrsubnets`, and image age checks with the `time` provider's functions and `plantimestamp()`. 9 test runs.
 
 **See**: [2-advanced-functions/README.md](2-advanced-functions/README.md)
 
@@ -583,6 +589,8 @@ Extend your TF-301 knowledge with these additional topics:
 | [3-sensitive-values/](3-sensitive-values/README.md) | `sensitive` Variables & `nonsensitive()` | Suppress secrets in plan/apply output; understand what `sensitive` does and doesn't protect |
 | [4-cross-variable-validation/](4-cross-variable-validation/README.md) | Cross-Variable Validation (1.9+) | Validation conditions that reference other variables — enforce environment-specific rules, feature flag consistency, and compliance requirements |
 | [5-ephemeral-values/](5-ephemeral-values/README.md) | Ephemeral Values (1.10+) | `ephemeral = true` on variables and outputs — values that are NEVER written to state or plan files; `ephemeralasnull()` function |
+| [6-output-type-constraints/](6-output-type-constraints/README.md) | Output Type Constraints (1.15+) | Explicit `type` on output blocks |
+| [7-capturing-ephemeral-values/](7-capturing-ephemeral-values/README.md) | Capturing Ephemeral Values (1.16+) | `terraform_data` `store` block — deliberately persist an ephemeral value, pin it with `version`, rotate it |
 
 ---
 
@@ -667,7 +675,7 @@ After completing TF-301:
 
 ### Overview
 
-Output type constraints allow you to specify the expected type of an output value, similar to variable type constraints. This ensures outputs match expected types and helps catch type mismatches at plan time.
+Output type constraints allow you to specify the expected type of an output value, similar to variable type constraints. Like a variable's type, Terraform converts the value where it can (the number `8080` becomes the string `"8080"`) and fails at plan time where it can't (`"abc"` as a `number`).
 
 ### Key Benefits
 
@@ -680,16 +688,16 @@ Output type constraints allow you to specify the expected type of an output valu
 ### Basic Example
 
 ```hcl
-output "instance_id" {
-  description = "The instance ID"
-  type        = string  # Explicit type constraint
-  value       = aws_instance.example.id
+output "first_instance_id" {
+  description = "The first instance's ID"
+  type        = string # Explicit type constraint
+  value       = terraform_data.instances[0].output.id
 }
 
 output "subnet_ids" {
   description = "List of subnet IDs"
   type        = list(string)
-  value       = aws_subnet.private[*].id
+  value       = [for s in terraform_data.network.output.subnets : s.id]
 }
 
 output "config" {
@@ -732,5 +740,35 @@ See the complete lab with 12 examples:
 For detailed documentation, examples, and best practices:
 - [Output Type Constraints README](6-output-type-constraints/README.md)
 - [Example Implementation](6-output-type-constraints/example/)
+
+---
+
+## 🆕 Section 7: Capturing Ephemeral Values (Terraform 1.16+)
+
+**New Feature**: Terraform 1.16 adds a `store` block to `terraform_data`. Its write-only `input` accepts ephemeral values and saves a copy in state — an explicit, opt-in way to make a generated secret stable and usable in regular attributes.
+
+```hcl
+ephemeral "random_password" "db" {
+  length = 24
+}
+
+resource "terraform_data" "db_password" {
+  store {
+    input     = ephemeral.random_password.db.result
+    sensitive = true
+    version   = var.password_version # without this, the password changes every apply
+  }
+}
+
+# terraform_data.db_password.store.sensitive_output is now a regular sensitive value
+```
+
+### Hands-On Lab
+
+- **Location**: `7-capturing-ephemeral-values/`
+- **Tasks**: capture, prove stability, rotate with `version`, see what happens without `version`
+- **Tests**: 4 runs comparing password fingerprints across applies
+
+- [Capturing Ephemeral Values README](7-capturing-ephemeral-values/README.md)
 
 ---

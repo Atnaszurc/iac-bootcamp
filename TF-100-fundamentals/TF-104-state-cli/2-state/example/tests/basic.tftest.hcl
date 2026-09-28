@@ -45,8 +45,8 @@ run "state_reflects_environment_change" {
   variables {
     environment = "prod"
     file_contents = {
-      "app.txt"    = "Production application"
-      "infra.txt"  = "Production infrastructure"
+      "app.txt"   = "Production application"
+      "infra.txt" = "Production infrastructure"
     }
   }
 

@@ -1,67 +1,96 @@
 # Modularizing Terraform Configurations
 
-In this section, we'll focus on rewriting our Azure Virtual Machine and local file configurations into reusable modules. We'll also discuss best practices and important considerations when working with Terraform modules.
+In this section, we'll focus on rewriting our libvirt virtual machine and local file configurations into reusable modules. We'll also discuss best practices and important considerations when working with Terraform modules.
 
 ## Table of Contents
 
 1. [Introduction](#modularizing-terraform-configurations)
 2. [Task 1: Rewriting Configurations as Modules](#task-1-rewriting-configurations-as-modules)
-   - [Azure Virtual Machine Module](#11-azure-virtual-machine-module)
+   - [Libvirt Virtual Machine Module](#11-libvirt-virtual-machine-module)
    - [Local File Module](#12-local-file-module)
 3. [Module Best Practices in Terraform](#module-best-practices-in-terraform)
 
 
 ## Task 1: Rewriting Configurations as Modules
 
-### 1.1 Azure Virtual Machine Module
+### 1.1 Libvirt Virtual Machine Module
 
-1. Start by creating new directories called `modules/azure`.
-2. Copy the .tf files from your previous lab (or from the example folder) and paste it into the azure folder and remove the Terraform and provider blocks from the main.tf file. 
-> This ensures that the module is self-contained and can be used in any environment without needing to modify the module, and that the calling module is responsible for providing the necessary inputs for provider configuration.
-3. Finally, to use this module, you can call it in your root module like this:
+1. Start by creating a new directory called `modules/vm`.
+2. Copy the .tf files from your previous lab (TF-103) into the `vm` folder and remove the `provider` block from `main.tf`. Keep the `terraform { required_providers { ... } }` block: a module has to say which providers it needs, but it shouldn't configure them.
+> This ensures that the module is self-contained and can be used in any environment without needing to modify the module, and that the calling module is responsible for configuring the provider.
+3. Turn the values that should differ per VM into variables: `vm_name`, `memory_mb`, `vcpu_count`, `network_cidr`, `base_image_url` and `ssh_public_key`. Every resource name must include `var.vm_name`, or two instances of the module would try to create a network, pool and VM with the same names.
+4. Add outputs for what the caller needs, for example the VM name and its IP address:
+```hcl
+output "vm_name" {
+  value = libvirt_domain.this.name
+}
+
+output "ip_address" {
+  value = try(data.libvirt_domain_interface_addresses.this.interfaces[0].addrs[0].addr, null)
+}
+```
+5. Finally, call the module twice from your root module, once for a web server and once for a database:
 ```hcl
 terraform {
   required_providers {
-    azurerm = {
-      source  = "hashicorp/azurerm"
-      version = "=4.0.1"
+    libvirt = {
+      source  = "dmacvicar/libvirt"
+      version = "~> 0.9"
     }
   }
 }
 
-provider "azurerm" {
-  features {}
-  subscription_id = var.subscription_id
+provider "libvirt" {
+  uri = "qemu:///system"
 }
 
-module "azure-vm" {
-  source = "./modules/azure/"
-  resource_group_name = "<your-resource-group>"
-  server_name = "<your-server-name>"
-  public_ssh_key = "<your-public-ssh-key>"
+module "web_vm" {
+  source = "./modules/vm"
+
+  vm_name        = "${var.project_name}-web"
+  base_image_url = var.base_image_url
+  ssh_public_key = var.ssh_public_key
+  memory_mb      = 1024
+  vcpu_count     = 1
+  network_cidr   = "10.50.1.0/24"
 }
 
-variable "resource_group_name" {
+module "db_vm" {
+  source = "./modules/vm"
+
+  vm_name        = "${var.project_name}-db"
+  base_image_url = var.base_image_url
+  ssh_public_key = var.ssh_public_key
+  memory_mb      = 2048
+  vcpu_count     = 2
+  network_cidr   = "10.50.2.0/24"
+}
+
+output "web_vm_ip" {
+  value = module.web_vm.ip_address
+}
+
+output "db_vm_ip" {
+  value = module.db_vm.ip_address
+}
+
+variable "project_name" {
   type = string
 }
 
-variable "server_name" {
+variable "base_image_url" {
   type = string
 }
 
-variable "public_ssh_key" {
-  type = string
-}
-
-variable "subscription_id" {
+variable "ssh_public_key" {
   type = string
 }
 ```
 And using a terraform.tfvars file to pass in the variables:
 ```hcl
-resource_group_name = "<your-resource-group>"
-server_name = "<your-server-name>"
-public_ssh_key = "<your-public-ssh-key>"
+project_name   = "tf104-modules"
+base_image_url = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+ssh_public_key = "<your-public-ssh-key>"
 ```
 
 Initialize Terraform, plan, and apply your changes:
@@ -70,6 +99,14 @@ terraform init
 terraform plan
 terraform apply
 ```
+
+Each VM ends up on its own network with an address from its own range:
+```
+db_vm_ip  = "10.50.2.150"
+web_vm_ip = "10.50.1.137"
+```
+
+The [`example/`](./example/) folder has the complete module and root configuration, with tests. Try `terraform console -scope=module.db_vm` there to look at the module's variables from the inside (Terraform 1.16+).
 
 ### 1.2 Local File Module
 
@@ -116,7 +153,7 @@ terraform {
   required_providers {
     local = {
       source  = "hashicorp/local"
-      version = "2.5.1"
+      version = "~> 2.7"
     }
   }
 }
@@ -195,7 +232,7 @@ When working with modules in Terraform, it's important to follow these best prac
 
 11. **Use consistent formatting**: Utilize tools like `terraform fmt` to maintain consistent code formatting across your modules and configurations.
 
-12. **Test your modules**: Implement automated tests for your modules using tools like Terratest to ensure they work as expected and catch potential issues early.
+12. **Test your modules**: Implement automated tests for your modules with `terraform test` (see [TF-303](../../../TF-300-advanced/TF-303-test-framework/README.md)) or tools like Terratest to ensure they work as expected and catch potential issues early.
 
 By adhering to these best practices, you can create more maintainable, reusable, and robust Terraform modules that will serve as building blocks for your infrastructure as code.
 

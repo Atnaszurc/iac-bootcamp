@@ -3,10 +3,10 @@
 output "basic_conversions" {
   description = "Basic type conversion examples"
   value = {
-    port_number    = local.port_number
-    count_string   = local.count_string
-    enabled_bool   = local.enabled_bool
-    tags_set       = local.tags_set
+    port_number  = local.port_number
+    count_string = local.count_string
+    enabled_bool = local.enabled_bool
+    tags_set     = local.tags_set
   }
 }
 
@@ -48,18 +48,18 @@ output "server_info" {
       total_storage_mb = local.total_storage_mb
       memory_per_cpu   = local.memory_per_cpu
     }
-    tags           = local.server_info.tags
-    is_production  = local.is_production
+    tags          = local.server_info.tags
+    is_production = local.is_production
   }
 }
 
 output "app_configuration" {
   description = "Typed application configuration"
   value = {
-    application     = local.app_config.application
-    database        = local.app_config.database
+    application       = local.app_config.application
+    database          = local.app_config.database
     connection_string = local.connection_string
-    total_workers   = local.total_workers
+    total_workers     = local.total_workers
   }
 }
 
@@ -83,17 +83,17 @@ output "validated_user" {
 output "conversion_summary" {
   description = "Summary of all conversions performed"
   value = {
-    basic_conversions_count    = 4
-    object_conversions_count   = 2
-    list_conversions_count     = 2
-    map_conversions_count      = 2
-    complex_structures_count   = 1
-    api_responses_parsed       = 1
-    configs_processed          = 1
-    validations_performed      = 1
-    
+    basic_conversions_count  = 4
+    object_conversions_count = 2
+    list_conversions_count   = 2
+    map_conversions_count    = 2
+    complex_structures_count = 1
+    api_responses_parsed     = 1
+    configs_processed        = 1
+    validations_performed    = 1
+
     total_conversions = 14
-    
+
     types_demonstrated = [
       "string → number",
       "number → string",

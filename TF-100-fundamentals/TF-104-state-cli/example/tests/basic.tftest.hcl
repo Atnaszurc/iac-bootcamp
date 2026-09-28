@@ -6,7 +6,9 @@
 # Teaching focus: terraform state, CLI workflow (init/plan/apply/show/destroy)
 # This test validates the infrastructure students manage via CLI commands.
 
-# mock_provider bypasses the real libvirt schema so tests run without a daemon
+# mock_provider fakes provider responses so tests run without a daemon.
+# Terraform silently drops unknown keys inside nested attributes, so the
+# devices assertions below guard against typos like devices.disk.
 mock_provider "libvirt" {}
 
 run "plan_default_vm" {
@@ -18,8 +20,13 @@ run "plan_default_vm" {
   }
 
   assert {
-    condition     = libvirt_domain.vm.memory == 1024
-    error_message = "Default VM memory should be 1024 MB"
+    condition     = libvirt_domain.vm.memory == 1024 && libvirt_domain.vm.memory_unit == "MiB"
+    error_message = "Default VM memory should be 1024 MiB"
+  }
+
+  assert {
+    condition     = length(libvirt_domain.vm.devices.disks) == 2 && length(libvirt_domain.vm.devices.interfaces) == 1
+    error_message = "VM should have two disks (system + cloud-init) and one network interface"
   }
 
   assert {

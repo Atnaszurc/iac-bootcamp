@@ -143,9 +143,9 @@ output "dr_configuration" {
       dns_record = "app.${var.domain_name}"
       role       = "SECONDARY"
     }
-    health_check_path      = "/health"
-    health_check_interval  = 30
-    failover_threshold     = 3
+    health_check_path     = "/health"
+    health_check_interval = 30
+    failover_threshold    = 3
   }
 }
 
@@ -157,21 +157,21 @@ output "observability_summary" {
   description = "Unified observability configuration across both clouds"
   value = {
     aws = {
-      log_group       = aws_cloudwatch_log_group.app.name
-      retention_days  = aws_cloudwatch_log_group.app.retention_in_days
-      alert_topic     = aws_sns_topic.alerts.arn
-      cpu_threshold   = aws_cloudwatch_metric_alarm.high_cpu.threshold
+      log_group      = aws_cloudwatch_log_group.app.name
+      retention_days = aws_cloudwatch_log_group.app.retention_in_days
+      alert_topic    = aws_sns_topic.alerts.arn
+      cpu_threshold  = aws_cloudwatch_metric_alarm.high_cpu.threshold
     }
     azure = {
-      log_workspace   = azurerm_log_analytics_workspace.main.name
-      retention_days  = azurerm_log_analytics_workspace.main.retention_in_days
-      action_group    = azurerm_monitor_action_group.main.name
-      cpu_threshold   = azurerm_monitor_metric_alert.high_cpu.criteria[0].threshold
+      log_workspace  = azurerm_log_analytics_workspace.main.name
+      retention_days = azurerm_log_analytics_workspace.main.retention_in_days
+      action_group   = azurerm_monitor_action_group.main.name
+      cpu_threshold  = azurerm_monitor_metric_alert.high_cpu.criteria[0].threshold
     }
     shared = {
-      alert_email     = var.alert_email
-      log_retention   = var.log_retention_days
-      cpu_threshold   = var.cpu_alert_threshold
+      alert_email   = var.alert_email
+      log_retention = var.log_retention_days
+      cpu_threshold = var.cpu_alert_threshold
     }
   }
 }

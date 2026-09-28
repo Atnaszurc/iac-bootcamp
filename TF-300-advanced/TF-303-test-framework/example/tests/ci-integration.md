@@ -71,7 +71,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "~1.14"
+          terraform_version: "~1.16"
 
       - name: Terraform Init
         run: terraform init
@@ -103,7 +103,7 @@ pool:
 steps:
   - task: TerraformInstaller@1
     inputs:
-      terraformVersion: "~1.14"
+      terraformVersion: "~1.16"
 
   - script: terraform init
     displayName: "Terraform Init"

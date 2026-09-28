@@ -1,0 +1,4 @@
+.terraform/
+# A Stack can't run without its provider lock file: commit it
+# (the repo's root .gitignore ignores lock files everywhere else)
+!.terraform.lock.hcl

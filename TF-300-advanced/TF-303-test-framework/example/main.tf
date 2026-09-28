@@ -78,8 +78,8 @@ resource "local_file" "service_config" {
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "local_file" "summary" {
-  filename = "${path.module}/output/${local.environment}/summary.txt"
-  content  = <<-EOT
+  filename        = "${path.module}/output/${local.environment}/summary.txt"
+  content         = <<-EOT
     # Infrastructure Summary
     # Environment : ${local.environment}
     # Services    : ${length(var.services)}
@@ -97,8 +97,8 @@ resource "local_file" "summary" {
 resource "local_file" "debug_info" {
   count = var.enable_debug ? 1 : 0
 
-  filename = "${path.module}/output/${local.environment}/debug.txt"
-  content  = <<-EOT
+  filename        = "${path.module}/output/${local.environment}/debug.txt"
+  content         = <<-EOT
     # Debug Information
     # Environment : ${local.environment}
     # All services (including disabled):

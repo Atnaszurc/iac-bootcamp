@@ -4,3 +4,7 @@
 *.pkrvars.hcl
 *.tfstate
 *.tfstate.*
+# Saved plans and downloaded binaries
+tfplan
+*.tfplan
+*.zip

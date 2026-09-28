@@ -81,27 +81,27 @@ locals {
   # Structured metadata — mirrors what you'd set as cloud provider tags
   metadata = {
     # Identity
-    "Name"              = "${var.image_name}-${var.image_version}"
-    "Version"           = var.image_version
-    "ImageFamily"       = var.image_name
+    "Name"        = "${var.image_name}-${var.image_version}"
+    "Version"     = var.image_version
+    "ImageFamily" = var.image_name
 
     # Lineage — track what this image was built from
-    "BaseImage"         = var.base_image_name
-    "BaseImageVersion"  = var.base_image_version
+    "BaseImage"        = var.base_image_name
+    "BaseImageVersion" = var.base_image_version
 
     # Application
-    "AppName"           = var.app_name
-    "AppVersion"        = var.app_version
+    "AppName"    = var.app_name
+    "AppVersion" = var.app_version
 
     # Ownership
-    "Team"              = var.team
-    "CostCenter"        = var.cost_center
-    "ManagedBy"         = "packer"
+    "Team"       = var.team
+    "CostCenter" = var.cost_center
+    "ManagedBy"  = "packer"
 
     # Compliance & audit
-    "ComplianceLevel"   = var.compliance_level
-    "BuildDate"         = local.build_date
-    "BuildTimestamp"    = local.build_timestamp
+    "ComplianceLevel" = var.compliance_level
+    "BuildDate"       = local.build_date
+    "BuildTimestamp"  = local.build_timestamp
 
     # Lifecycle — updated during promotion
     "Status"            = "dev"
@@ -136,8 +136,8 @@ build {
   }
 
   post-processor "manifest" {
-    output     = "manifest.json"
-    strip_path = true
+    output      = "manifest.json"
+    strip_path  = true
     custom_data = local.metadata
   }
 }

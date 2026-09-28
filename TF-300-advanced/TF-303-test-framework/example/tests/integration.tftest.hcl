@@ -144,13 +144,13 @@ run "dev_environment_full_config" {
     log_level    = "debug"
     enable_debug = true
     tags = {
-      Team      = "backend"
+      Team       = "backend"
       CostCentre = "engineering"
     }
     services = {
-      web     = { port = 80,   enabled = true  }
-      api     = { port = 8080, enabled = true  }
-      worker  = { port = 5000, enabled = true  }
+      web     = { port = 80, enabled = true }
+      api     = { port = 8080, enabled = true }
+      worker  = { port = 5000, enabled = true }
       monitor = { port = 9090, enabled = false }
     }
   }
@@ -193,7 +193,7 @@ run "staging_environment_config" {
     log_level    = "warn"
     enable_debug = false
     services = {
-      web = { port = 80,   enabled = true }
+      web = { port = 80, enabled = true }
       api = { port = 8080, enabled = true }
     }
   }
@@ -231,11 +231,11 @@ run "prod_environment_config" {
     log_level    = "error"
     enable_debug = false
     tags = {
-      CostCentre = "production"
+      CostCentre  = "production"
       Criticality = "high"
     }
     services = {
-      web = { port = 443,  enabled = true }
+      web = { port = 443, enabled = true }
       api = { port = 8443, enabled = true }
     }
   }

@@ -1,63 +1,1128 @@
 {
   "format_version": "1.2",
-  "terraform_version": "1.9.0",
+  "terraform_version": "1.16.4",
   "variables": {
-    "app_name": { "value": "web-api" },
-    "environment": { "value": "prod" }
+    "environment": {
+      "value": "prod"
+    },
+    "network_mode": {
+      "value": "open"
+    },
+    "network_name": {
+      "value": "prod-app"
+    },
+    "owner": {
+      "value": "data-team"
+    },
+    "pool": {
+      "value": "default"
+    },
+    "vms": {
+      "value": {
+        "Batch_01": {
+          "disk_gib": 250,
+          "memory": 32768,
+          "vcpu": 12
+        },
+        "db": {
+          "disk_gib": 50,
+          "memory": 4096,
+          "network": "legacy-lab",
+          "vcpu": 2
+        },
+        "web": {
+          "disk_gib": 20,
+          "memory": 1,
+          "memory_unit": "GiB",
+          "vcpu": 1
+        }
+      }
+    }
   },
   "planned_values": {
     "root_module": {
       "resources": [
         {
-          "address": "local_file.app_config",
-          "type": "local_file",
-          "name": "app_config",
-          "provider_name": "registry.terraform.io/hashicorp/local",
+          "address": "libvirt_domain.vm[\"Batch_01\"]",
+          "mode": "managed",
+          "type": "libvirt_domain",
+          "name": "vm",
+          "index": "Batch_01",
+          "provider_name": "registry.terraform.io/dmacvicar/libvirt",
           "schema_version": 0,
           "values": {
-            "filename": "./output/app.conf",
-            "file_permission": "0644",
-            "content": "app_name = web-api\nenvironment = prod\n",
-            "tags": {
-              "Name": "prod-file-app-config",
-              "Environment": "prod",
-              "ManagedBy": "terraform",
-              "Owner": "platform-team"
+            "autostart": null,
+            "bhyve_commandline": null,
+            "block_io_tune": null,
+            "bootloader": null,
+            "bootloader_args": null,
+            "clock": null,
+            "cpu": null,
+            "cpu_tune": null,
+            "create": null,
+            "current_memory": null,
+            "current_memory_unit": null,
+            "default_io_thread": null,
+            "description": "owner=data-team environment=prod",
+            "destroy": null,
+            "devices": {
+              "audios": null,
+              "channels": null,
+              "consoles": null,
+              "controllers": null,
+              "crypto": null,
+              "disks": [
+                {
+                  "acpi": null,
+                  "address": null,
+                  "alias": null,
+                  "auth": null,
+                  "backend_domain": null,
+                  "backing_store": null,
+                  "block_io": null,
+                  "boot": null,
+                  "device": null,
+                  "driver": {
+                    "ats": null,
+                    "cache": null,
+                    "copy_on_read": null,
+                    "detect_zeros": null,
+                    "discard": null,
+                    "discard_no_unref": null,
+                    "error_policy": null,
+                    "event_idx": null,
+                    "io": null,
+                    "io_event_fd": null,
+                    "io_thread": null,
+                    "io_threads": null,
+                    "iommu": null,
+                    "metadata_cache": null,
+                    "name": null,
+                    "packed": null,
+                    "page_per_vq": null,
+                    "queue_size": null,
+                    "queues": null,
+                    "rerror_policy": null,
+                    "statistics": null,
+                    "type": "qcow2"
+                  },
+                  "encryption": null,
+                  "geometry": null,
+                  "io_tune": null,
+                  "mirror": null,
+                  "model": null,
+                  "product": null,
+                  "raw_io": null,
+                  "read_only": null,
+                  "serial": null,
+                  "sgio": null,
+                  "shareable": null,
+                  "snapshot": null,
+                  "source": {
+                    "block": null,
+                    "cookies": null,
+                    "ctl": null,
+                    "data_store": null,
+                    "dir": null,
+                    "encryption": null,
+                    "file": null,
+                    "index": null,
+                    "network": null,
+                    "nvme": null,
+                    "readahead": null,
+                    "reservations": null,
+                    "slices": null,
+                    "ssl": null,
+                    "startup_policy": null,
+                    "timeout": null,
+                    "vhost_user": null,
+                    "vhost_vdpa": null,
+                    "volume": {
+                      "mode": null,
+                      "pool": "default",
+                      "sec_label": null,
+                      "volume": "prod-Batch_01-data.qcow2"
+                    }
+                  },
+                  "target": {
+                    "bus": "virtio",
+                    "dev": "vda",
+                    "dpofua": null,
+                    "removable": null,
+                    "rotation_rate": null,
+                    "tray": null
+                  },
+                  "throttle_filters": null,
+                  "transient": null,
+                  "vendor": null,
+                  "wwn": null
+                }
+              ],
+              "emulator": null,
+              "filesystems": null,
+              "graphics": null,
+              "hostdevs": null,
+              "hubs": null,
+              "inputs": null,
+              "interfaces": [
+                {
+                  "acpi": null,
+                  "address": null,
+                  "alias": null,
+                  "backend": null,
+                  "backend_domain": null,
+                  "bandwidth": null,
+                  "boot": null,
+                  "coalesce": null,
+                  "down_script": null,
+                  "driver": null,
+                  "filter_ref": null,
+                  "guest": null,
+                  "ip": null,
+                  "link": null,
+                  "mac": null,
+                  "managed": null,
+                  "model": {
+                    "type": "virtio"
+                  },
+                  "mtu": null,
+                  "port_forward": null,
+                  "port_options": null,
+                  "rom": null,
+                  "route": null,
+                  "script": null,
+                  "source": {
+                    "bridge": null,
+                    "client": null,
+                    "direct": null,
+                    "ethernet": null,
+                    "hostdev": null,
+                    "internal": null,
+                    "mcast": null,
+                    "network": {
+                      "bridge": null,
+                      "network": "prod-app",
+                      "port_group": null,
+                      "port_id": null
+                    },
+                    "null": null,
+                    "server": null,
+                    "udp": null,
+                    "user": null,
+                    "vdpa": null,
+                    "vds": null,
+                    "vhost_user": null
+                  },
+                  "target": null,
+                  "teaming": null,
+                  "trust_guest_rx_filters": null,
+                  "tune": null,
+                  "virtual_port": null,
+                  "vlan": null,
+                  "wait_for_ip": null
+                }
+              ],
+              "iomm_us": null,
+              "iommu": null,
+              "leases": null,
+              "mem_balloon": null,
+              "memorydevs": null,
+              "nvram": null,
+              "panics": null,
+              "parallels": null,
+              "pstore": null,
+              "redir_devs": null,
+              "redir_filters": null,
+              "rngs": null,
+              "serials": null,
+              "shmems": null,
+              "smartcards": null,
+              "sounds": null,
+              "tpms": null,
+              "videos": null,
+              "vsock": null,
+              "watchdogs": null
+            },
+            "features": null,
+            "gen_id": null,
+            "hwuuid": null,
+            "id_map": null,
+            "io_thread_i_ds": null,
+            "io_threads": null,
+            "iommufd": null,
+            "key_wrap": null,
+            "launch_security": null,
+            "lxc_namespace": null,
+            "maximum_memory": null,
+            "maximum_memory_slots": null,
+            "maximum_memory_unit": null,
+            "memory": 32768,
+            "memory_backing": null,
+            "memory_dump_core": null,
+            "memory_tune": null,
+            "memory_unit": "MiB",
+            "metadata": null,
+            "name": "prod-Batch_01",
+            "numa_tune": null,
+            "on_crash": null,
+            "on_poweroff": null,
+            "on_reboot": null,
+            "os": {
+              "acpi": null,
+              "bios": null,
+              "boot_devices": null,
+              "boot_menu": null,
+              "cmdline": null,
+              "dtb": null,
+              "firmware": null,
+              "firmware_info": null,
+              "init": null,
+              "init_args": null,
+              "init_dir": null,
+              "init_env": null,
+              "init_group": null,
+              "init_user": null,
+              "initrd": null,
+              "kernel": null,
+              "loader": null,
+              "loader_format": null,
+              "loader_readonly": null,
+              "loader_secure": null,
+              "loader_stateless": null,
+              "loader_type": null,
+              "nv_ram": null,
+              "shim": null,
+              "sm_bios": null,
+              "type": "hvm",
+              "type_arch": null,
+              "type_machine": null,
+              "var_store": null
+            },
+            "perf": null,
+            "pm": null,
+            "qemu_capabilities": null,
+            "qemu_commandline": null,
+            "qemu_deprecation": null,
+            "qemu_override": null,
+            "resource": null,
+            "running": null,
+            "sec_label": null,
+            "sys_info": null,
+            "throttle_groups": null,
+            "title": null,
+            "type": "kvm",
+            "update": null,
+            "vcpu": 12,
+            "vcpu_cpuset": null,
+            "vcpu_current": null,
+            "vcpu_placement": null,
+            "vcpus": null,
+            "vmware_data_center_path": null,
+            "xen_commandline": null
+          },
+          "sensitive_values": {
+            "devices": {
+              "disks": [
+                {
+                  "driver": {},
+                  "source": {
+                    "volume": {}
+                  },
+                  "target": {}
+                }
+              ],
+              "interfaces": [
+                {
+                  "model": {},
+                  "source": {
+                    "network": {}
+                  }
+                }
+              ]
+            },
+            "os": {}
+          }
+        },
+        {
+          "address": "libvirt_domain.vm[\"db\"]",
+          "mode": "managed",
+          "type": "libvirt_domain",
+          "name": "vm",
+          "index": "db",
+          "provider_name": "registry.terraform.io/dmacvicar/libvirt",
+          "schema_version": 0,
+          "values": {
+            "autostart": null,
+            "bhyve_commandline": null,
+            "block_io_tune": null,
+            "bootloader": null,
+            "bootloader_args": null,
+            "clock": null,
+            "cpu": null,
+            "cpu_tune": null,
+            "create": null,
+            "current_memory": null,
+            "current_memory_unit": null,
+            "default_io_thread": null,
+            "description": "owner=data-team environment=prod",
+            "destroy": null,
+            "devices": {
+              "audios": null,
+              "channels": null,
+              "consoles": null,
+              "controllers": null,
+              "crypto": null,
+              "disks": [
+                {
+                  "acpi": null,
+                  "address": null,
+                  "alias": null,
+                  "auth": null,
+                  "backend_domain": null,
+                  "backing_store": null,
+                  "block_io": null,
+                  "boot": null,
+                  "device": null,
+                  "driver": {
+                    "ats": null,
+                    "cache": null,
+                    "copy_on_read": null,
+                    "detect_zeros": null,
+                    "discard": null,
+                    "discard_no_unref": null,
+                    "error_policy": null,
+                    "event_idx": null,
+                    "io": null,
+                    "io_event_fd": null,
+                    "io_thread": null,
+                    "io_threads": null,
+                    "iommu": null,
+                    "metadata_cache": null,
+                    "name": null,
+                    "packed": null,
+                    "page_per_vq": null,
+                    "queue_size": null,
+                    "queues": null,
+                    "rerror_policy": null,
+                    "statistics": null,
+                    "type": "qcow2"
+                  },
+                  "encryption": null,
+                  "geometry": null,
+                  "io_tune": null,
+                  "mirror": null,
+                  "model": null,
+                  "product": null,
+                  "raw_io": null,
+                  "read_only": null,
+                  "serial": null,
+                  "sgio": null,
+                  "shareable": null,
+                  "snapshot": null,
+                  "source": {
+                    "block": null,
+                    "cookies": null,
+                    "ctl": null,
+                    "data_store": null,
+                    "dir": null,
+                    "encryption": null,
+                    "file": null,
+                    "index": null,
+                    "network": null,
+                    "nvme": null,
+                    "readahead": null,
+                    "reservations": null,
+                    "slices": null,
+                    "ssl": null,
+                    "startup_policy": null,
+                    "timeout": null,
+                    "vhost_user": null,
+                    "vhost_vdpa": null,
+                    "volume": {
+                      "mode": null,
+                      "pool": "default",
+                      "sec_label": null,
+                      "volume": "prod-db-data.qcow2"
+                    }
+                  },
+                  "target": {
+                    "bus": "virtio",
+                    "dev": "vda",
+                    "dpofua": null,
+                    "removable": null,
+                    "rotation_rate": null,
+                    "tray": null
+                  },
+                  "throttle_filters": null,
+                  "transient": null,
+                  "vendor": null,
+                  "wwn": null
+                }
+              ],
+              "emulator": null,
+              "filesystems": null,
+              "graphics": null,
+              "hostdevs": null,
+              "hubs": null,
+              "inputs": null,
+              "interfaces": [
+                {
+                  "acpi": null,
+                  "address": null,
+                  "alias": null,
+                  "backend": null,
+                  "backend_domain": null,
+                  "bandwidth": null,
+                  "boot": null,
+                  "coalesce": null,
+                  "down_script": null,
+                  "driver": null,
+                  "filter_ref": null,
+                  "guest": null,
+                  "ip": null,
+                  "link": null,
+                  "mac": null,
+                  "managed": null,
+                  "model": {
+                    "type": "virtio"
+                  },
+                  "mtu": null,
+                  "port_forward": null,
+                  "port_options": null,
+                  "rom": null,
+                  "route": null,
+                  "script": null,
+                  "source": {
+                    "bridge": null,
+                    "client": null,
+                    "direct": null,
+                    "ethernet": null,
+                    "hostdev": null,
+                    "internal": null,
+                    "mcast": null,
+                    "network": {
+                      "bridge": null,
+                      "network": "legacy-lab",
+                      "port_group": null,
+                      "port_id": null
+                    },
+                    "null": null,
+                    "server": null,
+                    "udp": null,
+                    "user": null,
+                    "vdpa": null,
+                    "vds": null,
+                    "vhost_user": null
+                  },
+                  "target": null,
+                  "teaming": null,
+                  "trust_guest_rx_filters": null,
+                  "tune": null,
+                  "virtual_port": null,
+                  "vlan": null,
+                  "wait_for_ip": null
+                }
+              ],
+              "iomm_us": null,
+              "iommu": null,
+              "leases": null,
+              "mem_balloon": null,
+              "memorydevs": null,
+              "nvram": null,
+              "panics": null,
+              "parallels": null,
+              "pstore": null,
+              "redir_devs": null,
+              "redir_filters": null,
+              "rngs": null,
+              "serials": null,
+              "shmems": null,
+              "smartcards": null,
+              "sounds": null,
+              "tpms": null,
+              "videos": null,
+              "vsock": null,
+              "watchdogs": null
+            },
+            "features": null,
+            "gen_id": null,
+            "hwuuid": null,
+            "id_map": null,
+            "io_thread_i_ds": null,
+            "io_threads": null,
+            "iommufd": null,
+            "key_wrap": null,
+            "launch_security": null,
+            "lxc_namespace": null,
+            "maximum_memory": null,
+            "maximum_memory_slots": null,
+            "maximum_memory_unit": null,
+            "memory": 4096,
+            "memory_backing": null,
+            "memory_dump_core": null,
+            "memory_tune": null,
+            "memory_unit": "MiB",
+            "metadata": null,
+            "name": "prod-db",
+            "numa_tune": null,
+            "on_crash": null,
+            "on_poweroff": null,
+            "on_reboot": null,
+            "os": {
+              "acpi": null,
+              "bios": null,
+              "boot_devices": null,
+              "boot_menu": null,
+              "cmdline": null,
+              "dtb": null,
+              "firmware": null,
+              "firmware_info": null,
+              "init": null,
+              "init_args": null,
+              "init_dir": null,
+              "init_env": null,
+              "init_group": null,
+              "init_user": null,
+              "initrd": null,
+              "kernel": null,
+              "loader": null,
+              "loader_format": null,
+              "loader_readonly": null,
+              "loader_secure": null,
+              "loader_stateless": null,
+              "loader_type": null,
+              "nv_ram": null,
+              "shim": null,
+              "sm_bios": null,
+              "type": "hvm",
+              "type_arch": null,
+              "type_machine": null,
+              "var_store": null
+            },
+            "perf": null,
+            "pm": null,
+            "qemu_capabilities": null,
+            "qemu_commandline": null,
+            "qemu_deprecation": null,
+            "qemu_override": null,
+            "resource": null,
+            "running": null,
+            "sec_label": null,
+            "sys_info": null,
+            "throttle_groups": null,
+            "title": null,
+            "type": "kvm",
+            "update": null,
+            "vcpu": 2,
+            "vcpu_cpuset": null,
+            "vcpu_current": null,
+            "vcpu_placement": null,
+            "vcpus": null,
+            "vmware_data_center_path": null,
+            "xen_commandline": null
+          },
+          "sensitive_values": {
+            "devices": {
+              "disks": [
+                {
+                  "driver": {},
+                  "source": {
+                    "volume": {}
+                  },
+                  "target": {}
+                }
+              ],
+              "interfaces": [
+                {
+                  "model": {},
+                  "source": {
+                    "network": {}
+                  }
+                }
+              ]
+            },
+            "os": {}
+          }
+        },
+        {
+          "address": "libvirt_domain.vm[\"web\"]",
+          "mode": "managed",
+          "type": "libvirt_domain",
+          "name": "vm",
+          "index": "web",
+          "provider_name": "registry.terraform.io/dmacvicar/libvirt",
+          "schema_version": 0,
+          "values": {
+            "autostart": null,
+            "bhyve_commandline": null,
+            "block_io_tune": null,
+            "bootloader": null,
+            "bootloader_args": null,
+            "clock": null,
+            "cpu": null,
+            "cpu_tune": null,
+            "create": null,
+            "current_memory": null,
+            "current_memory_unit": null,
+            "default_io_thread": null,
+            "description": "owner=data-team environment=prod",
+            "destroy": null,
+            "devices": {
+              "audios": null,
+              "channels": null,
+              "consoles": null,
+              "controllers": null,
+              "crypto": null,
+              "disks": [
+                {
+                  "acpi": null,
+                  "address": null,
+                  "alias": null,
+                  "auth": null,
+                  "backend_domain": null,
+                  "backing_store": null,
+                  "block_io": null,
+                  "boot": null,
+                  "device": null,
+                  "driver": {
+                    "ats": null,
+                    "cache": null,
+                    "copy_on_read": null,
+                    "detect_zeros": null,
+                    "discard": null,
+                    "discard_no_unref": null,
+                    "error_policy": null,
+                    "event_idx": null,
+                    "io": null,
+                    "io_event_fd": null,
+                    "io_thread": null,
+                    "io_threads": null,
+                    "iommu": null,
+                    "metadata_cache": null,
+                    "name": null,
+                    "packed": null,
+                    "page_per_vq": null,
+                    "queue_size": null,
+                    "queues": null,
+                    "rerror_policy": null,
+                    "statistics": null,
+                    "type": "qcow2"
+                  },
+                  "encryption": null,
+                  "geometry": null,
+                  "io_tune": null,
+                  "mirror": null,
+                  "model": null,
+                  "product": null,
+                  "raw_io": null,
+                  "read_only": null,
+                  "serial": null,
+                  "sgio": null,
+                  "shareable": null,
+                  "snapshot": null,
+                  "source": {
+                    "block": null,
+                    "cookies": null,
+                    "ctl": null,
+                    "data_store": null,
+                    "dir": null,
+                    "encryption": null,
+                    "file": null,
+                    "index": null,
+                    "network": null,
+                    "nvme": null,
+                    "readahead": null,
+                    "reservations": null,
+                    "slices": null,
+                    "ssl": null,
+                    "startup_policy": null,
+                    "timeout": null,
+                    "vhost_user": null,
+                    "vhost_vdpa": null,
+                    "volume": {
+                      "mode": null,
+                      "pool": "default",
+                      "sec_label": null,
+                      "volume": "prod-web-data.qcow2"
+                    }
+                  },
+                  "target": {
+                    "bus": "virtio",
+                    "dev": "vda",
+                    "dpofua": null,
+                    "removable": null,
+                    "rotation_rate": null,
+                    "tray": null
+                  },
+                  "throttle_filters": null,
+                  "transient": null,
+                  "vendor": null,
+                  "wwn": null
+                }
+              ],
+              "emulator": null,
+              "filesystems": null,
+              "graphics": null,
+              "hostdevs": null,
+              "hubs": null,
+              "inputs": null,
+              "interfaces": [
+                {
+                  "acpi": null,
+                  "address": null,
+                  "alias": null,
+                  "backend": null,
+                  "backend_domain": null,
+                  "bandwidth": null,
+                  "boot": null,
+                  "coalesce": null,
+                  "down_script": null,
+                  "driver": null,
+                  "filter_ref": null,
+                  "guest": null,
+                  "ip": null,
+                  "link": null,
+                  "mac": null,
+                  "managed": null,
+                  "model": {
+                    "type": "virtio"
+                  },
+                  "mtu": null,
+                  "port_forward": null,
+                  "port_options": null,
+                  "rom": null,
+                  "route": null,
+                  "script": null,
+                  "source": {
+                    "bridge": null,
+                    "client": null,
+                    "direct": null,
+                    "ethernet": null,
+                    "hostdev": null,
+                    "internal": null,
+                    "mcast": null,
+                    "network": {
+                      "bridge": null,
+                      "network": "prod-app",
+                      "port_group": null,
+                      "port_id": null
+                    },
+                    "null": null,
+                    "server": null,
+                    "udp": null,
+                    "user": null,
+                    "vdpa": null,
+                    "vds": null,
+                    "vhost_user": null
+                  },
+                  "target": null,
+                  "teaming": null,
+                  "trust_guest_rx_filters": null,
+                  "tune": null,
+                  "virtual_port": null,
+                  "vlan": null,
+                  "wait_for_ip": null
+                }
+              ],
+              "iomm_us": null,
+              "iommu": null,
+              "leases": null,
+              "mem_balloon": null,
+              "memorydevs": null,
+              "nvram": null,
+              "panics": null,
+              "parallels": null,
+              "pstore": null,
+              "redir_devs": null,
+              "redir_filters": null,
+              "rngs": null,
+              "serials": null,
+              "shmems": null,
+              "smartcards": null,
+              "sounds": null,
+              "tpms": null,
+              "videos": null,
+              "vsock": null,
+              "watchdogs": null
+            },
+            "features": null,
+            "gen_id": null,
+            "hwuuid": null,
+            "id_map": null,
+            "io_thread_i_ds": null,
+            "io_threads": null,
+            "iommufd": null,
+            "key_wrap": null,
+            "launch_security": null,
+            "lxc_namespace": null,
+            "maximum_memory": null,
+            "maximum_memory_slots": null,
+            "maximum_memory_unit": null,
+            "memory": 1,
+            "memory_backing": null,
+            "memory_dump_core": null,
+            "memory_tune": null,
+            "memory_unit": "GiB",
+            "metadata": null,
+            "name": "prod-web",
+            "numa_tune": null,
+            "on_crash": null,
+            "on_poweroff": null,
+            "on_reboot": null,
+            "os": {
+              "acpi": null,
+              "bios": null,
+              "boot_devices": null,
+              "boot_menu": null,
+              "cmdline": null,
+              "dtb": null,
+              "firmware": null,
+              "firmware_info": null,
+              "init": null,
+              "init_args": null,
+              "init_dir": null,
+              "init_env": null,
+              "init_group": null,
+              "init_user": null,
+              "initrd": null,
+              "kernel": null,
+              "loader": null,
+              "loader_format": null,
+              "loader_readonly": null,
+              "loader_secure": null,
+              "loader_stateless": null,
+              "loader_type": null,
+              "nv_ram": null,
+              "shim": null,
+              "sm_bios": null,
+              "type": "hvm",
+              "type_arch": null,
+              "type_machine": null,
+              "var_store": null
+            },
+            "perf": null,
+            "pm": null,
+            "qemu_capabilities": null,
+            "qemu_commandline": null,
+            "qemu_deprecation": null,
+            "qemu_override": null,
+            "resource": null,
+            "running": null,
+            "sec_label": null,
+            "sys_info": null,
+            "throttle_groups": null,
+            "title": null,
+            "type": "kvm",
+            "update": null,
+            "vcpu": 1,
+            "vcpu_cpuset": null,
+            "vcpu_current": null,
+            "vcpu_placement": null,
+            "vcpus": null,
+            "vmware_data_center_path": null,
+            "xen_commandline": null
+          },
+          "sensitive_values": {
+            "devices": {
+              "disks": [
+                {
+                  "driver": {},
+                  "source": {
+                    "volume": {}
+                  },
+                  "target": {}
+                }
+              ],
+              "interfaces": [
+                {
+                  "model": {},
+                  "source": {
+                    "network": {}
+                  }
+                }
+              ]
+            },
+            "os": {}
+          }
+        },
+        {
+          "address": "libvirt_network.app",
+          "mode": "managed",
+          "type": "libvirt_network",
+          "name": "app",
+          "provider_name": "registry.terraform.io/dmacvicar/libvirt",
+          "schema_version": 0,
+          "values": {
+            "autostart": true,
+            "bandwidth": null,
+            "bridge": null,
+            "dns": null,
+            "dnsmasq_options": null,
+            "domain": null,
+            "forward": {
+              "addresses": null,
+              "dev": null,
+              "driver": null,
+              "interfaces": null,
+              "managed": null,
+              "mode": "open",
+              "nat": null,
+              "pfs": null
+            },
+            "ips": [
+              {
+                "address": "10.40.0.1",
+                "dhcp": {
+                  "bootp": null,
+                  "hosts": null,
+                  "ranges": [
+                    {
+                      "end": "10.40.0.200",
+                      "lease": null,
+                      "start": "10.40.0.100"
+                    }
+                  ]
+                },
+                "family": null,
+                "local_ptr": null,
+                "netmask": null,
+                "prefix": 24,
+                "tftp": null
+              }
+            ],
+            "ipv6": null,
+            "mac": null,
+            "metadata": null,
+            "mtu": null,
+            "name": "prod-app",
+            "port_groups": null,
+            "port_options": null,
+            "routes": null,
+            "trust_guest_rx_filters": null,
+            "virtual_port": null,
+            "vlan": null
+          },
+          "sensitive_values": {
+            "forward": {},
+            "ips": [
+              {
+                "dhcp": {
+                  "ranges": [
+                    {}
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "address": "libvirt_volume.data[\"Batch_01\"]",
+          "mode": "managed",
+          "type": "libvirt_volume",
+          "name": "data",
+          "index": "Batch_01",
+          "provider_name": "registry.terraform.io/dmacvicar/libvirt",
+          "schema_version": 0,
+          "values": {
+            "allocation_unit": null,
+            "backing_store": null,
+            "capacity": 250,
+            "capacity_unit": "GiB",
+            "create": null,
+            "name": "prod-Batch_01-data.qcow2",
+            "physical_unit": null,
+            "pool": "default",
+            "target": {
+              "cluster_size": null,
+              "cluster_size_unit": null,
+              "compat": null,
+              "encryption": null,
+              "features": null,
+              "format": {
+                "type": "qcow2"
+              },
+              "permissions": null,
+              "timestamps": null
+            },
+            "type": null
+          },
+          "sensitive_values": {
+            "target": {
+              "format": {}
             }
           }
         },
         {
-          "address": "local_file.database_config",
-          "type": "local_file",
-          "name": "database_config",
-          "provider_name": "registry.terraform.io/hashicorp/local",
+          "address": "libvirt_volume.data[\"db\"]",
+          "mode": "managed",
+          "type": "libvirt_volume",
+          "name": "data",
+          "index": "db",
+          "provider_name": "registry.terraform.io/dmacvicar/libvirt",
           "schema_version": 0,
           "values": {
-            "filename": "./output/database.conf",
-            "file_permission": "0640",
-            "content": "host = db.prod.internal\nport = 5432\n",
-            "tags": {
-              "Name": "prod-file-database-config",
-              "Environment": "prod",
-              "ManagedBy": "terraform",
-              "Owner": "platform-team"
+            "allocation_unit": null,
+            "backing_store": null,
+            "capacity": 50,
+            "capacity_unit": "GiB",
+            "create": null,
+            "name": "prod-db-data.qcow2",
+            "physical_unit": null,
+            "pool": "default",
+            "target": {
+              "cluster_size": null,
+              "cluster_size_unit": null,
+              "compat": null,
+              "encryption": null,
+              "features": null,
+              "format": {
+                "type": "qcow2"
+              },
+              "permissions": null,
+              "timestamps": null
+            },
+            "type": null
+          },
+          "sensitive_values": {
+            "target": {
+              "format": {}
             }
           }
         },
         {
-          "address": "local_file.insecure_example",
-          "type": "local_file",
-          "name": "insecure_example",
-          "provider_name": "registry.terraform.io/hashicorp/local",
+          "address": "libvirt_volume.data[\"web\"]",
+          "mode": "managed",
+          "type": "libvirt_volume",
+          "name": "data",
+          "index": "web",
+          "provider_name": "registry.terraform.io/dmacvicar/libvirt",
           "schema_version": 0,
           "values": {
-            "filename": "./output/insecure.conf",
-            "file_permission": "0777",
-            "content": "# This file has insecure permissions — policy should catch this\n",
-            "tags": {
-              "Name": "BadName",
-              "Environment": "production",
-              "ManagedBy": "manual"
+            "allocation_unit": null,
+            "backing_store": null,
+            "capacity": 20,
+            "capacity_unit": "GiB",
+            "create": null,
+            "name": "prod-web-data.qcow2",
+            "physical_unit": null,
+            "pool": "default",
+            "target": {
+              "cluster_size": null,
+              "cluster_size_unit": null,
+              "compat": null,
+              "encryption": null,
+              "features": null,
+              "format": {
+                "type": "qcow2"
+              },
+              "permissions": null,
+              "timestamps": null
+            },
+            "type": null
+          },
+          "sensitive_values": {
+            "target": {
+              "format": {}
             }
           }
         }
@@ -66,87 +1131,1462 @@
   },
   "resource_changes": [
     {
-      "address": "local_file.app_config",
-      "type": "local_file",
-      "name": "app_config",
-      "provider_name": "registry.terraform.io/hashicorp/local",
+      "address": "libvirt_domain.vm[\"Batch_01\"]",
+      "mode": "managed",
+      "type": "libvirt_domain",
+      "name": "vm",
+      "index": "Batch_01",
+      "provider_name": "registry.terraform.io/dmacvicar/libvirt",
       "change": {
-        "actions": ["create"],
+        "actions": [
+          "create"
+        ],
         "before": null,
         "after": {
-          "filename": "./output/app.conf",
-          "file_permission": "0644",
-          "content": "app_name = web-api\nenvironment = prod\n",
-          "tags": {
-            "Name": "prod-file-app-config",
-            "Environment": "prod",
-            "ManagedBy": "terraform",
-            "Owner": "platform-team"
+          "autostart": null,
+          "bhyve_commandline": null,
+          "block_io_tune": null,
+          "bootloader": null,
+          "bootloader_args": null,
+          "clock": null,
+          "cpu": null,
+          "cpu_tune": null,
+          "create": null,
+          "current_memory": null,
+          "current_memory_unit": null,
+          "default_io_thread": null,
+          "description": "owner=data-team environment=prod",
+          "destroy": null,
+          "devices": {
+            "audios": null,
+            "channels": null,
+            "consoles": null,
+            "controllers": null,
+            "crypto": null,
+            "disks": [
+              {
+                "acpi": null,
+                "address": null,
+                "alias": null,
+                "auth": null,
+                "backend_domain": null,
+                "backing_store": null,
+                "block_io": null,
+                "boot": null,
+                "device": null,
+                "driver": {
+                  "ats": null,
+                  "cache": null,
+                  "copy_on_read": null,
+                  "detect_zeros": null,
+                  "discard": null,
+                  "discard_no_unref": null,
+                  "error_policy": null,
+                  "event_idx": null,
+                  "io": null,
+                  "io_event_fd": null,
+                  "io_thread": null,
+                  "io_threads": null,
+                  "iommu": null,
+                  "metadata_cache": null,
+                  "name": null,
+                  "packed": null,
+                  "page_per_vq": null,
+                  "queue_size": null,
+                  "queues": null,
+                  "rerror_policy": null,
+                  "statistics": null,
+                  "type": "qcow2"
+                },
+                "encryption": null,
+                "geometry": null,
+                "io_tune": null,
+                "mirror": null,
+                "model": null,
+                "product": null,
+                "raw_io": null,
+                "read_only": null,
+                "serial": null,
+                "sgio": null,
+                "shareable": null,
+                "snapshot": null,
+                "source": {
+                  "block": null,
+                  "cookies": null,
+                  "ctl": null,
+                  "data_store": null,
+                  "dir": null,
+                  "encryption": null,
+                  "file": null,
+                  "index": null,
+                  "network": null,
+                  "nvme": null,
+                  "readahead": null,
+                  "reservations": null,
+                  "slices": null,
+                  "ssl": null,
+                  "startup_policy": null,
+                  "timeout": null,
+                  "vhost_user": null,
+                  "vhost_vdpa": null,
+                  "volume": {
+                    "mode": null,
+                    "pool": "default",
+                    "sec_label": null,
+                    "volume": "prod-Batch_01-data.qcow2"
+                  }
+                },
+                "target": {
+                  "bus": "virtio",
+                  "dev": "vda",
+                  "dpofua": null,
+                  "removable": null,
+                  "rotation_rate": null,
+                  "tray": null
+                },
+                "throttle_filters": null,
+                "transient": null,
+                "vendor": null,
+                "wwn": null
+              }
+            ],
+            "emulator": null,
+            "filesystems": null,
+            "graphics": null,
+            "hostdevs": null,
+            "hubs": null,
+            "inputs": null,
+            "interfaces": [
+              {
+                "acpi": null,
+                "address": null,
+                "alias": null,
+                "backend": null,
+                "backend_domain": null,
+                "bandwidth": null,
+                "boot": null,
+                "coalesce": null,
+                "down_script": null,
+                "driver": null,
+                "filter_ref": null,
+                "guest": null,
+                "ip": null,
+                "link": null,
+                "mac": null,
+                "managed": null,
+                "model": {
+                  "type": "virtio"
+                },
+                "mtu": null,
+                "port_forward": null,
+                "port_options": null,
+                "rom": null,
+                "route": null,
+                "script": null,
+                "source": {
+                  "bridge": null,
+                  "client": null,
+                  "direct": null,
+                  "ethernet": null,
+                  "hostdev": null,
+                  "internal": null,
+                  "mcast": null,
+                  "network": {
+                    "bridge": null,
+                    "network": "prod-app",
+                    "port_group": null,
+                    "port_id": null
+                  },
+                  "null": null,
+                  "server": null,
+                  "udp": null,
+                  "user": null,
+                  "vdpa": null,
+                  "vds": null,
+                  "vhost_user": null
+                },
+                "target": null,
+                "teaming": null,
+                "trust_guest_rx_filters": null,
+                "tune": null,
+                "virtual_port": null,
+                "vlan": null,
+                "wait_for_ip": null
+              }
+            ],
+            "iomm_us": null,
+            "iommu": null,
+            "leases": null,
+            "mem_balloon": null,
+            "memorydevs": null,
+            "nvram": null,
+            "panics": null,
+            "parallels": null,
+            "pstore": null,
+            "redir_devs": null,
+            "redir_filters": null,
+            "rngs": null,
+            "serials": null,
+            "shmems": null,
+            "smartcards": null,
+            "sounds": null,
+            "tpms": null,
+            "videos": null,
+            "vsock": null,
+            "watchdogs": null
+          },
+          "features": null,
+          "gen_id": null,
+          "hwuuid": null,
+          "id_map": null,
+          "io_thread_i_ds": null,
+          "io_threads": null,
+          "iommufd": null,
+          "key_wrap": null,
+          "launch_security": null,
+          "lxc_namespace": null,
+          "maximum_memory": null,
+          "maximum_memory_slots": null,
+          "maximum_memory_unit": null,
+          "memory": 32768,
+          "memory_backing": null,
+          "memory_dump_core": null,
+          "memory_tune": null,
+          "memory_unit": "MiB",
+          "metadata": null,
+          "name": "prod-Batch_01",
+          "numa_tune": null,
+          "on_crash": null,
+          "on_poweroff": null,
+          "on_reboot": null,
+          "os": {
+            "acpi": null,
+            "bios": null,
+            "boot_devices": null,
+            "boot_menu": null,
+            "cmdline": null,
+            "dtb": null,
+            "firmware": null,
+            "firmware_info": null,
+            "init": null,
+            "init_args": null,
+            "init_dir": null,
+            "init_env": null,
+            "init_group": null,
+            "init_user": null,
+            "initrd": null,
+            "kernel": null,
+            "loader": null,
+            "loader_format": null,
+            "loader_readonly": null,
+            "loader_secure": null,
+            "loader_stateless": null,
+            "loader_type": null,
+            "nv_ram": null,
+            "shim": null,
+            "sm_bios": null,
+            "type": "hvm",
+            "type_arch": null,
+            "type_machine": null,
+            "var_store": null
+          },
+          "perf": null,
+          "pm": null,
+          "qemu_capabilities": null,
+          "qemu_commandline": null,
+          "qemu_deprecation": null,
+          "qemu_override": null,
+          "resource": null,
+          "running": null,
+          "sec_label": null,
+          "sys_info": null,
+          "throttle_groups": null,
+          "title": null,
+          "type": "kvm",
+          "update": null,
+          "vcpu": 12,
+          "vcpu_cpuset": null,
+          "vcpu_current": null,
+          "vcpu_placement": null,
+          "vcpus": null,
+          "vmware_data_center_path": null,
+          "xen_commandline": null
+        },
+        "after_unknown": {
+          "devices": {
+            "disks": [
+              {
+                "driver": {},
+                "source": {
+                  "volume": {}
+                },
+                "target": {}
+              }
+            ],
+            "interfaces": [
+              {
+                "model": {},
+                "source": {
+                  "network": {}
+                }
+              }
+            ]
+          },
+          "id": true,
+          "os": {},
+          "uuid": true
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "devices": {
+            "disks": [
+              {
+                "driver": {},
+                "source": {
+                  "volume": {}
+                },
+                "target": {}
+              }
+            ],
+            "interfaces": [
+              {
+                "model": {},
+                "source": {
+                  "network": {}
+                }
+              }
+            ]
+          },
+          "os": {}
+        }
+      }
+    },
+    {
+      "address": "libvirt_domain.vm[\"db\"]",
+      "mode": "managed",
+      "type": "libvirt_domain",
+      "name": "vm",
+      "index": "db",
+      "provider_name": "registry.terraform.io/dmacvicar/libvirt",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "autostart": null,
+          "bhyve_commandline": null,
+          "block_io_tune": null,
+          "bootloader": null,
+          "bootloader_args": null,
+          "clock": null,
+          "cpu": null,
+          "cpu_tune": null,
+          "create": null,
+          "current_memory": null,
+          "current_memory_unit": null,
+          "default_io_thread": null,
+          "description": "owner=data-team environment=prod",
+          "destroy": null,
+          "devices": {
+            "audios": null,
+            "channels": null,
+            "consoles": null,
+            "controllers": null,
+            "crypto": null,
+            "disks": [
+              {
+                "acpi": null,
+                "address": null,
+                "alias": null,
+                "auth": null,
+                "backend_domain": null,
+                "backing_store": null,
+                "block_io": null,
+                "boot": null,
+                "device": null,
+                "driver": {
+                  "ats": null,
+                  "cache": null,
+                  "copy_on_read": null,
+                  "detect_zeros": null,
+                  "discard": null,
+                  "discard_no_unref": null,
+                  "error_policy": null,
+                  "event_idx": null,
+                  "io": null,
+                  "io_event_fd": null,
+                  "io_thread": null,
+                  "io_threads": null,
+                  "iommu": null,
+                  "metadata_cache": null,
+                  "name": null,
+                  "packed": null,
+                  "page_per_vq": null,
+                  "queue_size": null,
+                  "queues": null,
+                  "rerror_policy": null,
+                  "statistics": null,
+                  "type": "qcow2"
+                },
+                "encryption": null,
+                "geometry": null,
+                "io_tune": null,
+                "mirror": null,
+                "model": null,
+                "product": null,
+                "raw_io": null,
+                "read_only": null,
+                "serial": null,
+                "sgio": null,
+                "shareable": null,
+                "snapshot": null,
+                "source": {
+                  "block": null,
+                  "cookies": null,
+                  "ctl": null,
+                  "data_store": null,
+                  "dir": null,
+                  "encryption": null,
+                  "file": null,
+                  "index": null,
+                  "network": null,
+                  "nvme": null,
+                  "readahead": null,
+                  "reservations": null,
+                  "slices": null,
+                  "ssl": null,
+                  "startup_policy": null,
+                  "timeout": null,
+                  "vhost_user": null,
+                  "vhost_vdpa": null,
+                  "volume": {
+                    "mode": null,
+                    "pool": "default",
+                    "sec_label": null,
+                    "volume": "prod-db-data.qcow2"
+                  }
+                },
+                "target": {
+                  "bus": "virtio",
+                  "dev": "vda",
+                  "dpofua": null,
+                  "removable": null,
+                  "rotation_rate": null,
+                  "tray": null
+                },
+                "throttle_filters": null,
+                "transient": null,
+                "vendor": null,
+                "wwn": null
+              }
+            ],
+            "emulator": null,
+            "filesystems": null,
+            "graphics": null,
+            "hostdevs": null,
+            "hubs": null,
+            "inputs": null,
+            "interfaces": [
+              {
+                "acpi": null,
+                "address": null,
+                "alias": null,
+                "backend": null,
+                "backend_domain": null,
+                "bandwidth": null,
+                "boot": null,
+                "coalesce": null,
+                "down_script": null,
+                "driver": null,
+                "filter_ref": null,
+                "guest": null,
+                "ip": null,
+                "link": null,
+                "mac": null,
+                "managed": null,
+                "model": {
+                  "type": "virtio"
+                },
+                "mtu": null,
+                "port_forward": null,
+                "port_options": null,
+                "rom": null,
+                "route": null,
+                "script": null,
+                "source": {
+                  "bridge": null,
+                  "client": null,
+                  "direct": null,
+                  "ethernet": null,
+                  "hostdev": null,
+                  "internal": null,
+                  "mcast": null,
+                  "network": {
+                    "bridge": null,
+                    "network": "legacy-lab",
+                    "port_group": null,
+                    "port_id": null
+                  },
+                  "null": null,
+                  "server": null,
+                  "udp": null,
+                  "user": null,
+                  "vdpa": null,
+                  "vds": null,
+                  "vhost_user": null
+                },
+                "target": null,
+                "teaming": null,
+                "trust_guest_rx_filters": null,
+                "tune": null,
+                "virtual_port": null,
+                "vlan": null,
+                "wait_for_ip": null
+              }
+            ],
+            "iomm_us": null,
+            "iommu": null,
+            "leases": null,
+            "mem_balloon": null,
+            "memorydevs": null,
+            "nvram": null,
+            "panics": null,
+            "parallels": null,
+            "pstore": null,
+            "redir_devs": null,
+            "redir_filters": null,
+            "rngs": null,
+            "serials": null,
+            "shmems": null,
+            "smartcards": null,
+            "sounds": null,
+            "tpms": null,
+            "videos": null,
+            "vsock": null,
+            "watchdogs": null
+          },
+          "features": null,
+          "gen_id": null,
+          "hwuuid": null,
+          "id_map": null,
+          "io_thread_i_ds": null,
+          "io_threads": null,
+          "iommufd": null,
+          "key_wrap": null,
+          "launch_security": null,
+          "lxc_namespace": null,
+          "maximum_memory": null,
+          "maximum_memory_slots": null,
+          "maximum_memory_unit": null,
+          "memory": 4096,
+          "memory_backing": null,
+          "memory_dump_core": null,
+          "memory_tune": null,
+          "memory_unit": "MiB",
+          "metadata": null,
+          "name": "prod-db",
+          "numa_tune": null,
+          "on_crash": null,
+          "on_poweroff": null,
+          "on_reboot": null,
+          "os": {
+            "acpi": null,
+            "bios": null,
+            "boot_devices": null,
+            "boot_menu": null,
+            "cmdline": null,
+            "dtb": null,
+            "firmware": null,
+            "firmware_info": null,
+            "init": null,
+            "init_args": null,
+            "init_dir": null,
+            "init_env": null,
+            "init_group": null,
+            "init_user": null,
+            "initrd": null,
+            "kernel": null,
+            "loader": null,
+            "loader_format": null,
+            "loader_readonly": null,
+            "loader_secure": null,
+            "loader_stateless": null,
+            "loader_type": null,
+            "nv_ram": null,
+            "shim": null,
+            "sm_bios": null,
+            "type": "hvm",
+            "type_arch": null,
+            "type_machine": null,
+            "var_store": null
+          },
+          "perf": null,
+          "pm": null,
+          "qemu_capabilities": null,
+          "qemu_commandline": null,
+          "qemu_deprecation": null,
+          "qemu_override": null,
+          "resource": null,
+          "running": null,
+          "sec_label": null,
+          "sys_info": null,
+          "throttle_groups": null,
+          "title": null,
+          "type": "kvm",
+          "update": null,
+          "vcpu": 2,
+          "vcpu_cpuset": null,
+          "vcpu_current": null,
+          "vcpu_placement": null,
+          "vcpus": null,
+          "vmware_data_center_path": null,
+          "xen_commandline": null
+        },
+        "after_unknown": {
+          "devices": {
+            "disks": [
+              {
+                "driver": {},
+                "source": {
+                  "volume": {}
+                },
+                "target": {}
+              }
+            ],
+            "interfaces": [
+              {
+                "model": {},
+                "source": {
+                  "network": {}
+                }
+              }
+            ]
+          },
+          "id": true,
+          "os": {},
+          "uuid": true
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "devices": {
+            "disks": [
+              {
+                "driver": {},
+                "source": {
+                  "volume": {}
+                },
+                "target": {}
+              }
+            ],
+            "interfaces": [
+              {
+                "model": {},
+                "source": {
+                  "network": {}
+                }
+              }
+            ]
+          },
+          "os": {}
+        }
+      }
+    },
+    {
+      "address": "libvirt_domain.vm[\"web\"]",
+      "mode": "managed",
+      "type": "libvirt_domain",
+      "name": "vm",
+      "index": "web",
+      "provider_name": "registry.terraform.io/dmacvicar/libvirt",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "autostart": null,
+          "bhyve_commandline": null,
+          "block_io_tune": null,
+          "bootloader": null,
+          "bootloader_args": null,
+          "clock": null,
+          "cpu": null,
+          "cpu_tune": null,
+          "create": null,
+          "current_memory": null,
+          "current_memory_unit": null,
+          "default_io_thread": null,
+          "description": "owner=data-team environment=prod",
+          "destroy": null,
+          "devices": {
+            "audios": null,
+            "channels": null,
+            "consoles": null,
+            "controllers": null,
+            "crypto": null,
+            "disks": [
+              {
+                "acpi": null,
+                "address": null,
+                "alias": null,
+                "auth": null,
+                "backend_domain": null,
+                "backing_store": null,
+                "block_io": null,
+                "boot": null,
+                "device": null,
+                "driver": {
+                  "ats": null,
+                  "cache": null,
+                  "copy_on_read": null,
+                  "detect_zeros": null,
+                  "discard": null,
+                  "discard_no_unref": null,
+                  "error_policy": null,
+                  "event_idx": null,
+                  "io": null,
+                  "io_event_fd": null,
+                  "io_thread": null,
+                  "io_threads": null,
+                  "iommu": null,
+                  "metadata_cache": null,
+                  "name": null,
+                  "packed": null,
+                  "page_per_vq": null,
+                  "queue_size": null,
+                  "queues": null,
+                  "rerror_policy": null,
+                  "statistics": null,
+                  "type": "qcow2"
+                },
+                "encryption": null,
+                "geometry": null,
+                "io_tune": null,
+                "mirror": null,
+                "model": null,
+                "product": null,
+                "raw_io": null,
+                "read_only": null,
+                "serial": null,
+                "sgio": null,
+                "shareable": null,
+                "snapshot": null,
+                "source": {
+                  "block": null,
+                  "cookies": null,
+                  "ctl": null,
+                  "data_store": null,
+                  "dir": null,
+                  "encryption": null,
+                  "file": null,
+                  "index": null,
+                  "network": null,
+                  "nvme": null,
+                  "readahead": null,
+                  "reservations": null,
+                  "slices": null,
+                  "ssl": null,
+                  "startup_policy": null,
+                  "timeout": null,
+                  "vhost_user": null,
+                  "vhost_vdpa": null,
+                  "volume": {
+                    "mode": null,
+                    "pool": "default",
+                    "sec_label": null,
+                    "volume": "prod-web-data.qcow2"
+                  }
+                },
+                "target": {
+                  "bus": "virtio",
+                  "dev": "vda",
+                  "dpofua": null,
+                  "removable": null,
+                  "rotation_rate": null,
+                  "tray": null
+                },
+                "throttle_filters": null,
+                "transient": null,
+                "vendor": null,
+                "wwn": null
+              }
+            ],
+            "emulator": null,
+            "filesystems": null,
+            "graphics": null,
+            "hostdevs": null,
+            "hubs": null,
+            "inputs": null,
+            "interfaces": [
+              {
+                "acpi": null,
+                "address": null,
+                "alias": null,
+                "backend": null,
+                "backend_domain": null,
+                "bandwidth": null,
+                "boot": null,
+                "coalesce": null,
+                "down_script": null,
+                "driver": null,
+                "filter_ref": null,
+                "guest": null,
+                "ip": null,
+                "link": null,
+                "mac": null,
+                "managed": null,
+                "model": {
+                  "type": "virtio"
+                },
+                "mtu": null,
+                "port_forward": null,
+                "port_options": null,
+                "rom": null,
+                "route": null,
+                "script": null,
+                "source": {
+                  "bridge": null,
+                  "client": null,
+                  "direct": null,
+                  "ethernet": null,
+                  "hostdev": null,
+                  "internal": null,
+                  "mcast": null,
+                  "network": {
+                    "bridge": null,
+                    "network": "prod-app",
+                    "port_group": null,
+                    "port_id": null
+                  },
+                  "null": null,
+                  "server": null,
+                  "udp": null,
+                  "user": null,
+                  "vdpa": null,
+                  "vds": null,
+                  "vhost_user": null
+                },
+                "target": null,
+                "teaming": null,
+                "trust_guest_rx_filters": null,
+                "tune": null,
+                "virtual_port": null,
+                "vlan": null,
+                "wait_for_ip": null
+              }
+            ],
+            "iomm_us": null,
+            "iommu": null,
+            "leases": null,
+            "mem_balloon": null,
+            "memorydevs": null,
+            "nvram": null,
+            "panics": null,
+            "parallels": null,
+            "pstore": null,
+            "redir_devs": null,
+            "redir_filters": null,
+            "rngs": null,
+            "serials": null,
+            "shmems": null,
+            "smartcards": null,
+            "sounds": null,
+            "tpms": null,
+            "videos": null,
+            "vsock": null,
+            "watchdogs": null
+          },
+          "features": null,
+          "gen_id": null,
+          "hwuuid": null,
+          "id_map": null,
+          "io_thread_i_ds": null,
+          "io_threads": null,
+          "iommufd": null,
+          "key_wrap": null,
+          "launch_security": null,
+          "lxc_namespace": null,
+          "maximum_memory": null,
+          "maximum_memory_slots": null,
+          "maximum_memory_unit": null,
+          "memory": 1,
+          "memory_backing": null,
+          "memory_dump_core": null,
+          "memory_tune": null,
+          "memory_unit": "GiB",
+          "metadata": null,
+          "name": "prod-web",
+          "numa_tune": null,
+          "on_crash": null,
+          "on_poweroff": null,
+          "on_reboot": null,
+          "os": {
+            "acpi": null,
+            "bios": null,
+            "boot_devices": null,
+            "boot_menu": null,
+            "cmdline": null,
+            "dtb": null,
+            "firmware": null,
+            "firmware_info": null,
+            "init": null,
+            "init_args": null,
+            "init_dir": null,
+            "init_env": null,
+            "init_group": null,
+            "init_user": null,
+            "initrd": null,
+            "kernel": null,
+            "loader": null,
+            "loader_format": null,
+            "loader_readonly": null,
+            "loader_secure": null,
+            "loader_stateless": null,
+            "loader_type": null,
+            "nv_ram": null,
+            "shim": null,
+            "sm_bios": null,
+            "type": "hvm",
+            "type_arch": null,
+            "type_machine": null,
+            "var_store": null
+          },
+          "perf": null,
+          "pm": null,
+          "qemu_capabilities": null,
+          "qemu_commandline": null,
+          "qemu_deprecation": null,
+          "qemu_override": null,
+          "resource": null,
+          "running": null,
+          "sec_label": null,
+          "sys_info": null,
+          "throttle_groups": null,
+          "title": null,
+          "type": "kvm",
+          "update": null,
+          "vcpu": 1,
+          "vcpu_cpuset": null,
+          "vcpu_current": null,
+          "vcpu_placement": null,
+          "vcpus": null,
+          "vmware_data_center_path": null,
+          "xen_commandline": null
+        },
+        "after_unknown": {
+          "devices": {
+            "disks": [
+              {
+                "driver": {},
+                "source": {
+                  "volume": {}
+                },
+                "target": {}
+              }
+            ],
+            "interfaces": [
+              {
+                "model": {},
+                "source": {
+                  "network": {}
+                }
+              }
+            ]
+          },
+          "id": true,
+          "os": {},
+          "uuid": true
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "devices": {
+            "disks": [
+              {
+                "driver": {},
+                "source": {
+                  "volume": {}
+                },
+                "target": {}
+              }
+            ],
+            "interfaces": [
+              {
+                "model": {},
+                "source": {
+                  "network": {}
+                }
+              }
+            ]
+          },
+          "os": {}
+        }
+      }
+    },
+    {
+      "address": "libvirt_network.app",
+      "mode": "managed",
+      "type": "libvirt_network",
+      "name": "app",
+      "provider_name": "registry.terraform.io/dmacvicar/libvirt",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "autostart": true,
+          "bandwidth": null,
+          "bridge": null,
+          "dns": null,
+          "dnsmasq_options": null,
+          "domain": null,
+          "forward": {
+            "addresses": null,
+            "dev": null,
+            "driver": null,
+            "interfaces": null,
+            "managed": null,
+            "mode": "open",
+            "nat": null,
+            "pfs": null
+          },
+          "ips": [
+            {
+              "address": "10.40.0.1",
+              "dhcp": {
+                "bootp": null,
+                "hosts": null,
+                "ranges": [
+                  {
+                    "end": "10.40.0.200",
+                    "lease": null,
+                    "start": "10.40.0.100"
+                  }
+                ]
+              },
+              "family": null,
+              "local_ptr": null,
+              "netmask": null,
+              "prefix": 24,
+              "tftp": null
+            }
+          ],
+          "ipv6": null,
+          "mac": null,
+          "metadata": null,
+          "mtu": null,
+          "name": "prod-app",
+          "port_groups": null,
+          "port_options": null,
+          "routes": null,
+          "trust_guest_rx_filters": null,
+          "virtual_port": null,
+          "vlan": null
+        },
+        "after_unknown": {
+          "forward": {},
+          "id": true,
+          "ips": [
+            {
+              "dhcp": {
+                "ranges": [
+                  {}
+                ]
+              }
+            }
+          ],
+          "uuid": true
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "forward": {},
+          "ips": [
+            {
+              "dhcp": {
+                "ranges": [
+                  {}
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "address": "libvirt_volume.data[\"Batch_01\"]",
+      "mode": "managed",
+      "type": "libvirt_volume",
+      "name": "data",
+      "index": "Batch_01",
+      "provider_name": "registry.terraform.io/dmacvicar/libvirt",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "allocation_unit": null,
+          "backing_store": null,
+          "capacity": 250,
+          "capacity_unit": "GiB",
+          "create": null,
+          "name": "prod-Batch_01-data.qcow2",
+          "physical_unit": null,
+          "pool": "default",
+          "target": {
+            "cluster_size": null,
+            "cluster_size_unit": null,
+            "compat": null,
+            "encryption": null,
+            "features": null,
+            "format": {
+              "type": "qcow2"
+            },
+            "permissions": null,
+            "timestamps": null
+          },
+          "type": null
+        },
+        "after_unknown": {
+          "allocation": true,
+          "id": true,
+          "key": true,
+          "path": true,
+          "physical": true,
+          "target": {
+            "format": {},
+            "path": true
+          }
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "target": {
+            "format": {}
           }
         }
       }
     },
     {
-      "address": "local_file.database_config",
-      "type": "local_file",
-      "name": "database_config",
-      "provider_name": "registry.terraform.io/hashicorp/local",
+      "address": "libvirt_volume.data[\"db\"]",
+      "mode": "managed",
+      "type": "libvirt_volume",
+      "name": "data",
+      "index": "db",
+      "provider_name": "registry.terraform.io/dmacvicar/libvirt",
       "change": {
-        "actions": ["create"],
+        "actions": [
+          "create"
+        ],
         "before": null,
         "after": {
-          "filename": "./output/database.conf",
-          "file_permission": "0640",
-          "content": "host = db.prod.internal\nport = 5432\n",
-          "tags": {
-            "Name": "prod-file-database-config",
-            "Environment": "prod",
-            "ManagedBy": "terraform",
-            "Owner": "platform-team"
+          "allocation_unit": null,
+          "backing_store": null,
+          "capacity": 50,
+          "capacity_unit": "GiB",
+          "create": null,
+          "name": "prod-db-data.qcow2",
+          "physical_unit": null,
+          "pool": "default",
+          "target": {
+            "cluster_size": null,
+            "cluster_size_unit": null,
+            "compat": null,
+            "encryption": null,
+            "features": null,
+            "format": {
+              "type": "qcow2"
+            },
+            "permissions": null,
+            "timestamps": null
+          },
+          "type": null
+        },
+        "after_unknown": {
+          "allocation": true,
+          "id": true,
+          "key": true,
+          "path": true,
+          "physical": true,
+          "target": {
+            "format": {},
+            "path": true
+          }
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "target": {
+            "format": {}
           }
         }
       }
     },
     {
-      "address": "local_file.insecure_example",
-      "type": "local_file",
-      "name": "insecure_example",
-      "provider_name": "registry.terraform.io/hashicorp/local",
+      "address": "libvirt_volume.data[\"web\"]",
+      "mode": "managed",
+      "type": "libvirt_volume",
+      "name": "data",
+      "index": "web",
+      "provider_name": "registry.terraform.io/dmacvicar/libvirt",
       "change": {
-        "actions": ["create"],
+        "actions": [
+          "create"
+        ],
         "before": null,
         "after": {
-          "filename": "./output/insecure.conf",
-          "file_permission": "0777",
-          "content": "# This file has insecure permissions — policy should catch this\n",
-          "tags": {
-            "Name": "BadName",
-            "Environment": "production",
-            "ManagedBy": "manual"
+          "allocation_unit": null,
+          "backing_store": null,
+          "capacity": 20,
+          "capacity_unit": "GiB",
+          "create": null,
+          "name": "prod-web-data.qcow2",
+          "physical_unit": null,
+          "pool": "default",
+          "target": {
+            "cluster_size": null,
+            "cluster_size_unit": null,
+            "compat": null,
+            "encryption": null,
+            "features": null,
+            "format": {
+              "type": "qcow2"
+            },
+            "permissions": null,
+            "timestamps": null
+          },
+          "type": null
+        },
+        "after_unknown": {
+          "allocation": true,
+          "id": true,
+          "key": true,
+          "path": true,
+          "physical": true,
+          "target": {
+            "format": {},
+            "path": true
+          }
+        },
+        "before_sensitive": false,
+        "after_sensitive": {
+          "target": {
+            "format": {}
           }
         }
       }
     }
   ],
   "configuration": {
+    "provider_config": {
+      "libvirt": {
+        "name": "libvirt",
+        "full_name": "registry.terraform.io/dmacvicar/libvirt",
+        "version_constraint": "~> 0.9",
+        "expressions": {
+          "uri": {
+            "constant_value": "qemu:///system"
+          }
+        }
+      }
+    },
     "root_module": {
       "resources": [
         {
-          "address": "local_file.app_config",
-          "type": "local_file",
-          "name": "app_config"
+          "address": "libvirt_domain.vm",
+          "mode": "managed",
+          "type": "libvirt_domain",
+          "name": "vm",
+          "provider_config_key": "libvirt",
+          "expressions": {
+            "description": {
+              "references": [
+                "var.owner",
+                "var.environment"
+              ]
+            },
+            "devices": {
+              "references": [
+                "libvirt_volume.data",
+                "each.key",
+                "libvirt_volume.data",
+                "each.key",
+                "each.value.network",
+                "each.value",
+                "libvirt_network.app.name",
+                "libvirt_network.app"
+              ]
+            },
+            "memory": {
+              "references": [
+                "each.value.memory",
+                "each.value"
+              ]
+            },
+            "memory_unit": {
+              "references": [
+                "each.value.memory_unit",
+                "each.value"
+              ]
+            },
+            "name": {
+              "references": [
+                "var.environment",
+                "each.key"
+              ]
+            },
+            "os": {
+              "constant_value": {
+                "type": "hvm"
+              }
+            },
+            "type": {
+              "constant_value": "kvm"
+            },
+            "vcpu": {
+              "references": [
+                "each.value.vcpu",
+                "each.value"
+              ]
+            }
+          },
+          "schema_version": 0,
+          "for_each_expression": {
+            "references": [
+              "var.vms"
+            ]
+          }
         },
         {
-          "address": "local_file.database_config",
-          "type": "local_file",
-          "name": "database_config"
+          "address": "libvirt_network.app",
+          "mode": "managed",
+          "type": "libvirt_network",
+          "name": "app",
+          "provider_config_key": "libvirt",
+          "expressions": {
+            "autostart": {
+              "constant_value": true
+            },
+            "forward": {
+              "references": [
+                "var.network_mode"
+              ]
+            },
+            "ips": {
+              "constant_value": [
+                {
+                  "address": "10.40.0.1",
+                  "dhcp": {
+                    "ranges": [
+                      {
+                        "end": "10.40.0.200",
+                        "start": "10.40.0.100"
+                      }
+                    ]
+                  },
+                  "prefix": 24
+                }
+              ]
+            },
+            "name": {
+              "references": [
+                "var.network_name"
+              ]
+            }
+          },
+          "schema_version": 0
         },
         {
-          "address": "local_file.insecure_example",
-          "type": "local_file",
-          "name": "insecure_example"
+          "address": "libvirt_volume.data",
+          "mode": "managed",
+          "type": "libvirt_volume",
+          "name": "data",
+          "provider_config_key": "libvirt",
+          "expressions": {
+            "capacity": {
+              "references": [
+                "each.value.disk_gib",
+                "each.value"
+              ]
+            },
+            "capacity_unit": {
+              "constant_value": "GiB"
+            },
+            "name": {
+              "references": [
+                "var.environment",
+                "each.key"
+              ]
+            },
+            "pool": {
+              "references": [
+                "var.pool"
+              ]
+            },
+            "target": {
+              "constant_value": {
+                "format": {
+                  "type": "qcow2"
+                }
+              }
+            }
+          },
+          "schema_version": 0,
+          "for_each_expression": {
+            "references": [
+              "var.vms"
+            ]
+          }
         }
-      ]
+      ],
+      "variables": {
+        "environment": {
+          "default": "dev",
+          "description": "dev, staging or prod"
+        },
+        "network_mode": {
+          "default": "nat",
+          "description": "libvirt forward mode: nat, route, open, bridge, ..."
+        },
+        "network_name": {
+          "default": "net-dev-app"
+        },
+        "owner": {
+          "default": "platform",
+          "description": "Team that owns these VMs"
+        },
+        "pool": {
+          "default": "default",
+          "description": "An existing storage pool"
+        },
+        "vms": {
+          "default": {
+            "web": {
+              "disk_gib": 10,
+              "memory": 1024,
+              "memory_unit": "MiB",
+              "network": null,
+              "vcpu": 1
+            }
+          },
+          "description": "VMs to create, by short name. The full name is <environment>-<short name>."
+        }
+      }
     }
-  }
+  },
+  "relevant_attributes": [
+    {
+      "resource": "libvirt_network.app",
+      "attribute": [
+        "name"
+      ]
+    },
+    {
+      "resource": "libvirt_volume.data",
+      "attribute": []
+    }
+  ],
+  "timestamp": "2026-09-28T16:32:17Z",
+  "applyable": true,
+  "complete": true,
+  "errored": false
 }

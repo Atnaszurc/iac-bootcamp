@@ -2,83 +2,93 @@
 
 ## Overview
 
-**Terraform 1.11** introduced **write-only attributes** — a provider-defined feature where certain resource attributes are accepted by Terraform during `apply` but are **never stored in state**. Write-only attributes are designed to work with ephemeral values (Terraform 1.10+), enabling a complete solution for secrets that should never touch state.
+**Terraform 1.11** introduced **write-only attributes**: a provider-defined feature where certain resource arguments are accepted by Terraform during `apply` but are **never stored in state or plan files**. Write-only attributes are designed to work with ephemeral values (Terraform 1.10+), which together keep a secret out of state from start to finish.
 
-> **Version Note**: Write-only attributes require **Terraform 1.11+** AND a provider that implements them. Not all providers support write-only attributes yet.
+> **Version Note**: Write-only attributes require **Terraform 1.11+** AND a provider that implements them. Not every provider has them yet.
+
+Everything on this page uses the `hashicorp/tls` provider, which runs locally: no account, no server. The output below was produced with Terraform 1.16.4 and tls 4.x.
 
 ---
 
 ## The Problem Write-Only Attributes Solve
 
-### The Traditional Problem: Passwords in State
+### The Traditional Problem: Secrets in State
+
+`tls_self_signed_cert` signs a certificate with a private key. The classic argument for that key is `private_key_pem`:
 
 ```hcl
-# Traditional approach — password stored in state!
-resource "aws_db_instance" "main" {
-  identifier = "production-db"
-  password   = var.db_password  # ⚠️ Stored in terraform.tfstate in plaintext
+# Traditional approach: the private key is stored in state
+resource "tls_self_signed_cert" "web" {
+  private_key_pem       = file("web.key") # ⚠️ Stored in terraform.tfstate in plaintext
+  validity_period_hours = 24
+  allowed_uses          = ["server_auth"]
+
+  subject {
+    common_name = "web.lab.local"
+  }
 }
 ```
 
-After `terraform apply`, your `terraform.tfstate` contains:
-```json
-{
-  "resources": [{
-    "instances": [{
-      "attributes": {
-        "password": "MySecretPassword123"  // ⚠️ Plaintext in state!
-      }
-    }]
-  }]
-}
+After `terraform apply`:
+
+```bash
+grep -c "PRIVATE KEY" terraform.tfstate
+# 1
+jq '.resources[0].instances[0].attributes.private_key_pem' terraform.tfstate
+# "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYD..."
 ```
+
+`sensitive` hides the key in plan output, but state holds it in plaintext. Anyone who can read the state (a teammate, a CI job, a backup) has your key.
 
 ### The Write-Only Solution
 
 ```hcl
-# Write-only approach — password NEVER stored in state
-resource "aws_db_instance" "main" {
-  identifier  = "production-db"
-  password_wo = var.db_password  # ✅ Accepted during apply, never stored in state
-  # password_wo_version = 1      # Increment to trigger password rotation
+# Write-only approach: the key is sent to the provider, never stored
+resource "tls_self_signed_cert" "web" {
+  private_key_pem_wo         = file("web.key") # ✅ Used during apply, never stored
+  private_key_pem_wo_version = 1               # Stored; increment to use a new key
+  validity_period_hours      = 24
+  allowed_uses               = ["server_auth"]
+
+  subject {
+    common_name = "web.lab.local"
+  }
 }
 ```
 
-After `terraform apply`, the state contains:
-```json
-{
-  "resources": [{
-    "instances": [{
-      "attributes": {
-        "password_wo": null  // ✅ Never stored — always null in state
-      }
-    }]
-  }]
-}
+After `terraform apply`:
+
+```bash
+grep -c "PRIVATE KEY" terraform.tfstate
+# 0
+jq '.resources[0].instances[0].attributes | {private_key_pem_wo, private_key_pem_wo_version}' terraform.tfstate
+# { "private_key_pem_wo": null, "private_key_pem_wo_version": 1 }
 ```
 
 ---
 
 ## How Write-Only Attributes Work
 
-Write-only attributes follow a naming convention: the attribute name ends with `_wo` (write-only). Providers that implement write-only attributes typically also provide a `_wo_version` companion attribute for triggering updates.
+Write-only attributes follow a naming convention: the name ends in `_wo`. Providers usually add a `_wo_version` companion argument next to it.
 
 ### The `_wo_version` Pattern
 
-Because write-only values are never stored in state, Terraform cannot detect when they change (it has nothing to compare against). The `_wo_version` attribute solves this:
+Because a write-only value is never stored, Terraform has nothing to compare a new value against: it can't tell that the key changed. The `_wo_version` argument solves this. It *is* stored, and when it changes, the provider uses the current write-only value:
 
 ```hcl
-resource "aws_db_instance" "main" {
-  identifier          = "production-db"
-  password_wo         = var.db_password  # Write-only: never stored
-  password_wo_version = 1                # Stored in state — increment to rotate password
+resource "tls_self_signed_cert" "web" {
+  private_key_pem_wo         = var.private_key_pem # Write-only: never stored
+  private_key_pem_wo_version = var.key_version     # Stored: change it to rotate
+  # ...
 }
 ```
 
-When you want to rotate the password:
-1. Change `var.db_password` to the new password
-2. Increment `password_wo_version` from `1` to `2`
-3. Run `terraform apply` — Terraform sees the version changed and re-applies the password
+To rotate the key:
+1. Give Terraform the new key (`var.private_key_pem`)
+2. Increment `key_version` from `1` to `2`
+3. Run `terraform apply`: Terraform sees the version changed and uses the new key
+
+Change only the key and not the version, and Terraform reports **No changes**. The hands-on below shows exactly that.
 
 ---
 
@@ -96,128 +106,161 @@ When you want to rotate the password:
 
 ## Using Write-Only Attributes with Ephemeral Values
 
-Write-only attributes are the primary use case for ephemeral values in resource blocks. An ephemeral variable can be passed to a write-only attribute — the value is used during apply but never stored anywhere:
+`file("web.key")` above keeps the key out of state, but the path is in your configuration. The usual combination is an **ephemeral variable** feeding a **write-only attribute**: the value comes from outside, is used during apply, and is stored nowhere. This is the example's `variables.tf` and `main.tf`:
 
 ```hcl
-# Ephemeral variable — never stored in state or plan files
-variable "db_password" {
+# Ephemeral variable: never stored in state or plan files (Terraform 1.10+)
+variable "private_key_pem" {
   type      = string
-  ephemeral = true  # Terraform 1.10+
+  ephemeral = true
 }
 
-# Write-only attribute — accepts ephemeral values (Terraform 1.11+)
-resource "aws_db_instance" "main" {
-  identifier          = "production-db"
-  engine              = "postgres"
-  instance_class      = "db.t3.micro"
-  allocated_storage   = 20
-
-  # ✅ Ephemeral variable → write-only attribute
-  # Neither the variable nor the attribute is ever stored in state
-  password_wo         = var.db_password
-  password_wo_version = var.db_password_version  # Regular variable — stored in state
-}
-
-variable "db_password_version" {
+variable "key_version" {
   type    = number
-  default = 1
-  # Not ephemeral — we want to track the version in state
+  default = 1 # Not ephemeral: the version is tracked in state
 }
+
+resource "tls_self_signed_cert" "web" {
+  # ✅ Ephemeral variable → write-only attribute (Terraform 1.11+)
+  private_key_pem_wo         = var.private_key_pem
+  private_key_pem_wo_version = var.key_version
+  # ...
+}
+```
+
+An ephemeral value can only go into places that don't store it: write-only attributes, ephemeral resources, provider configuration, other ephemeral values. `private_key_pem = var.private_key_pem` (the regular argument) is an error:
+
+```
+Error: Invalid use of ephemeral value
+
+Ephemeral values are not valid for "private_key_pem", because it is not a
+write-only attribute and must be persisted to state.
 ```
 
 ---
 
 ## Identifying Write-Only Attributes in Provider Documentation
 
-Write-only attributes are documented in provider documentation with a **"Write-Only"** badge or note. Look for:
+Look for:
 
-1. **Attribute name ending in `_wo`**: e.g., `password_wo`, `secret_wo`
-2. **Documentation note**: "This attribute is write-only and will not be stored in state"
-3. **Companion `_wo_version` attribute**: For triggering updates
+1. **An argument name ending in `_wo`**: `private_key_pem_wo`, `password_wo`, `secret_string_wo`
+2. **A note in the argument's description** that it is write-only and not stored in state
+3. **A companion `_wo_version` argument** to trigger updates
 
-### Example from AWS Provider Documentation
-
-```
-password_wo (String, Write-Only)
-  The password for the database master user. This attribute is write-only
-  and will not be stored in the Terraform state. Use password_wo_version
-  to trigger password rotation.
-
-password_wo_version (Number)
-  An integer that, when changed, triggers an update of the password_wo
-  attribute. Increment this value to rotate the database password.
-```
-
----
-
-## Practical Example: Simulated Write-Only Pattern
-
-Since write-only attributes require provider support, this example uses the `local` provider to demonstrate the **concept** using a `null_resource` with a provisioner — the closest equivalent available without a cloud provider:
-
-See the `example/` directory for a working demonstration.
-
-```
-example/
-├── main.tf        # Demonstrates write-only pattern with null_resource
-├── variables.tf   # Ephemeral and version variables
-└── outputs.tf     # Shows what IS and ISN'T stored in state
-```
-
----
-
-## Password Rotation Workflow
-
-```hcl
-# Step 1: Initial deployment
-variable "db_password" {
-  type      = string
-  ephemeral = true
-}
-
-variable "db_password_version" {
-  type    = number
-  default = 1  # Start at version 1
-}
-
-resource "aws_db_instance" "main" {
-  password_wo         = var.db_password    # e.g., "InitialPassword123"
-  password_wo_version = var.db_password_version  # 1
-}
-```
+Or ask Terraform itself, after `terraform init`:
 
 ```bash
-# Step 2: Rotate the password
-# 1. Update your secret store with the new password
-# 2. Update terraform.tfvars (or use -var flags):
-#    db_password_version = 2
-# 3. Apply with new password:
-terraform apply \
-  -var="db_password=NewPassword456" \
-  -var="db_password_version=2"
+terraform providers schema -json | jq -r '
+  .provider_schemas[].resource_schemas | to_entries[]
+  | .key as $r | .value.block.attributes // {} | to_entries[]
+  | select(.value.write_only) | "\($r).\(.key)"'
+# tls_cert_request.private_key_pem_wo
+# tls_locally_signed_cert.ca_private_key_pem_wo
+# tls_self_signed_cert.private_key_pem_wo
 ```
 
-**Why this works**: Terraform sees `db_password_version` changed from `1` to `2` in state, so it re-applies the resource with the new `password_wo` value.
+Real-world examples in cloud providers include database passwords (`password_wo` on `aws_db_instance` in the AWS provider 6.x) and secret values in secret managers. The pattern is always the one on this page: the `_wo` argument plus a `_wo_version`.
+
+---
+
+## Hands-On: A Certificate Whose Key Terraform Never Sees
+
+**Directory**: [`example/`](./example/) — uses the `hashicorp/tls` provider, which runs locally: no account, no server.
+
+The scenario: your web server's private key is kept outside Terraform (a file only you have, a password manager, Vault), and Terraform manages the certificate.
+
+```hcl
+variable "private_key_pem" {
+  type      = string
+  ephemeral = true # never in state or plan files
+}
+
+variable "key_version" {
+  type    = number
+  default = 1
+}
+
+resource "tls_self_signed_cert" "web" {
+  private_key_pem_wo         = var.private_key_pem # write-only
+  private_key_pem_wo_version = var.key_version
+
+  validity_period_hours = 24 * 90
+  allowed_uses          = ["server_auth", "digital_signature", "key_encipherment"]
+  dns_names             = [var.hostname]
+
+  subject {
+    common_name = var.hostname
+  }
+}
+```
+
+### Step 1: Sign a certificate
+
+```bash
+cd example
+openssl genpkey -algorithm ed25519 -out web.key     # the key lives outside Terraform
+export TF_VAR_private_key_pem="$(cat web.key)"
+terraform init
+terraform apply
+```
+
+### Step 2: Look for the key
+
+```bash
+grep -c "PRIVATE KEY" terraform.tfstate
+# 0
+
+# ...but the certificate really belongs to your key:
+diff <(openssl x509 -in out/web.lab.local.crt -noout -pubkey) <(openssl pkey -in web.key -pubout) && echo "match"
+```
+
+Compare with the old way: set `private_key_pem = var.private_key_pem` instead (and remove `ephemeral = true`, which that attribute won't accept). Apply, and `grep` finds the key in plain text in the state.
+
+### Step 3: See why `_wo_version` exists
+
+```bash
+openssl genpkey -algorithm ed25519 -out web2.key
+export TF_VAR_private_key_pem="$(cat web2.key)"
+terraform plan
+# No changes. Your infrastructure matches the configuration.
+```
+
+A different key, and Terraform doesn't notice: it doesn't store the value, so it has nothing to compare with. The version number is how you tell it:
+
+```bash
+terraform apply -var key_version=2
+#   # tls_self_signed_cert.web must be replaced
+```
+
+Now the certificate is signed with the new key.
+
+### Step 4: Run the tests
+
+```bash
+terraform test
+```
+
+The tests generate a throwaway key with a helper module (`tests/setup`) and assert that `private_key_pem_wo` reads back as `null`.
 
 ---
 
 ## Key Rules Summary
 
 ### ✅ Write-only attributes CAN accept:
-- Regular string/number values
+- Regular values (strings, numbers, `file(...)`)
 - `sensitive = true` variables
-- `ephemeral = true` variables (primary use case)
-- Computed values from other resources (if non-ephemeral)
+- `ephemeral = true` variables (the main use case)
+- Values from other resources and data sources, including ephemeral resources
 
 ### ❌ Write-only attributes CANNOT:
-- Be read back after apply (always `null` in state)
+- Be read back: every reference to them, in state, outputs or other resources, is `null`
 - Be used for drift detection (use `_wo_version` instead)
-- Be referenced in other resource attributes
-- Be output via `terraform output`
+- Tell Terraform that their value changed: only a `_wo_version` change does
 
 ### ⚠️ Provider Requirements:
-- The provider must explicitly implement write-only attributes
-- Not all providers support write-only attributes yet
-- Check provider documentation for `_wo` suffix attributes
+- The provider must implement write-only attributes, and Terraform must be 1.11+
+- Not all providers have them yet
+- Check the provider documentation, or the schema query above
 
 ---
 
@@ -227,7 +270,7 @@ terraform apply \
 |----------|---------------|
 | Database password (cloud provider) | `password_wo` + `password_wo_version` |
 | API key for a managed service | Write-only attribute if provider supports it |
-| TLS certificate private key | Write-only attribute if provider supports it |
+| TLS certificate private key | `tls_self_signed_cert.private_key_pem_wo` (the hands-on above) |
 | Resource name or ID | Regular attribute (needs drift detection) |
 | Configuration that changes frequently | Regular or sensitive (needs drift detection) |
 
@@ -245,4 +288,4 @@ terraform apply \
 
 - [Terraform Docs: Write-Only Attributes](https://developer.hashicorp.com/terraform/language/resources/ephemeral-values#write-only-arguments)
 - [Terraform 1.11 Release Notes](https://github.com/hashicorp/terraform/releases/tag/v1.11.0)
-- [AWS Provider: Write-Only Attributes](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
+- [tls provider: `tls_self_signed_cert`](https://registry.terraform.io/providers/hashicorp/tls/latest/docs/resources/self_signed_cert)

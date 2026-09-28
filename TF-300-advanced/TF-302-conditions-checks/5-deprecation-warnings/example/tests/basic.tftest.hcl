@@ -1,54 +1,40 @@
-# Test file for deprecation detection examples
-# Terraform 1.15+
+# TF-302 Section 5: Deprecation warnings — tests
+#
+# terraform test can't assert on warnings, so these tests check that the
+# deprecated configuration and the migrated one (solution/) produce the same
+# result: a migration shouldn't change behaviour.
+# Uses the real random and null providers (no credentials, nothing remote).
 
-run "verify_documentation_files_created" {
-  command = apply
-
-  assert {
-    condition     = fileexists(local_file.deprecation_example.filename)
-    error_message = "Deprecation demo file was not created"
-  }
-
-  assert {
-    condition     = fileexists(local_file.common_patterns.filename)
-    error_message = "Common patterns file was not created"
-  }
-
-  assert {
-    condition     = fileexists(local_file.migration_checklist.filename)
-    error_message = "Migration checklist file was not created"
+override_resource {
+  target = random_string.suffix
+  values = {
+    result = "abcdefgh"
   }
 }
 
-run "verify_output_structure" {
+run "deprecated_version" {
   command = apply
 
   assert {
-    condition     = length(keys(output.example_files)) == 3
-    error_message = "Expected 3 example files in output"
-  }
-
-  assert {
-    condition     = length(keys(output.key_points)) == 7
-    error_message = "Expected 7 key points in output"
+    condition     = output.vm_names == tomap({ web = "web-abcdefgh", db = "db-abcdefgh" })
+    error_message = "The deprecated configuration should still produce the VM names"
   }
 }
 
-run "verify_file_content" {
+run "migrated_version" {
   command = apply
 
-  assert {
-    condition     = length(local_file.deprecation_example.content) > 100
-    error_message = "Deprecation demo file content is too short"
+  module {
+    source = "./solution"
   }
 
   assert {
-    condition     = length(local_file.common_patterns.content) > 100
-    error_message = "Common patterns file content is too short"
+    condition     = output.vm_names == { web = "web-abcdefgh", db = "db-abcdefgh" }
+    error_message = "The migrated configuration must produce the same VM names"
   }
 
   assert {
-    condition     = length(local_file.migration_checklist.content) > 100
-    error_message = "Migration checklist file content is too short"
+    condition     = random_string.suffix.numeric == false
+    error_message = "numeric replaces number"
   }
 }

@@ -1,0 +1,3 @@
+# The repo ignores *.pkrvars.hcl; these two are demo values for the lesson, with no secrets
+!dev.pkrvars.hcl
+!prod.pkrvars.hcl

@@ -146,10 +146,10 @@ build {
       artifact_name = local.artifact_name
 
       # Lifecycle
-      lifecycle_stage  = var.lifecycle_stage
-      promoted_from    = var.promoted_from
-      promotion_chain  = local.promotion_chain
-      is_production    = tostring(local.is_production)
+      lifecycle_stage = var.lifecycle_stage
+      promoted_from   = var.promoted_from
+      promotion_chain = local.promotion_chain
+      is_production   = tostring(local.is_production)
 
       # Governance
       approved_by    = var.approved_by

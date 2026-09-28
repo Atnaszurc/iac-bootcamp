@@ -43,7 +43,7 @@ removed {
   from = local_file.handoff_config
 
   lifecycle {
-    destroy = false  # Keep the file, just stop tracking it in state
+    destroy = false # Keep the file, just stop tracking it in state
   }
 }
 

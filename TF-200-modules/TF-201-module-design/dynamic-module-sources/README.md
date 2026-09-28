@@ -1,674 +1,356 @@
-# Dynamic Module Sources with Variables and Locals
+# Dynamic Module Sources: `const` Variables in `source` and `version`
 
 **New in Terraform 1.15+**
 
-Objective: Learn how to use variables and locals in module `source` and `version` attributes for dynamic module sourcing and version management.
+Objective: pick a module's `source` and `version` with variables and locals, understand why those variables must be `const`, and know the traps.
+
+Everything here runs locally: two versions of a local module, and a small registry module (`hashicorp/dir/template`) that needs no provider. Verified with Terraform 1.16.4 and 1.17.0-beta2.
 
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Why Dynamic Module Sources?](#why-dynamic-module-sources)
+2. [Why `const`?](#why-const)
 3. [Syntax](#syntax)
-4. [Use Cases](#use-cases)
-5. [Instructions](#instructions)
-6. [Best Practices](#best-practices)
-7. [Limitations](#limitations)
+4. [The Rules, and the Errors](#the-rules-and-the-errors)
+5. [Hands-On](#hands-on)
+6. [Testing: a Trap](#testing-a-trap)
+7. [Use Cases](#use-cases)
+8. [Best Practices](#best-practices)
 
 ## Overview
 
-Terraform 1.15 introduces a powerful new capability: using variables and locals in module `source` and `version` attributes. This enables dynamic module sourcing, environment-specific versioning, and centralized version management - features that were previously impossible.
+Until Terraform 1.15, a module's `source` and `version` had to be literal strings:
 
-### What's New
-
-**Before Terraform 1.15** (Static only):
 ```hcl
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"  # Must be literal string
-  version = "5.0.0"                          # Must be literal string
+module "network" {
+  source = "./modules/network/v1" # literal only
 }
 ```
 
-**Terraform 1.15+** (Dynamic):
-```hcl
-variable "module_version" {
-  default = "5.0.0"
-}
-
-module "vpc" {
-  source  = var.module_source    # Can use variables!
-  version = var.module_version   # Can use variables!
-}
-```
-
-## Why Dynamic Module Sources?
-
-### Problems This Solves
-
-1. **Environment-Specific Versions**: Different module versions per environment
-2. **Centralized Version Management**: Single source of truth for module versions
-3. **Dynamic Module Selection**: Choose modules based on conditions
-4. **CI/CD Integration**: Pass module versions from pipeline variables
-5. **Testing**: Easy switching between module versions for testing
-6. **Multi-Tenancy**: Different module sources per tenant/customer
-
-### Benefits
-
-- ✅ **Flexibility**: Dynamic module selection based on variables
-- ✅ **Consistency**: Centralized version management
-- ✅ **Automation**: CI/CD-driven module versioning
-- ✅ **Testing**: Easy version switching for testing
-- ✅ **Multi-Environment**: Different versions per environment
-- ✅ **Maintainability**: Update versions in one place
-
-## Syntax
-
-### Using Variables
+Since 1.15, they can use **input variables declared with `const = true`**, and **locals** built only from those and literals:
 
 ```hcl
-variable "module_source" {
-  description = "Source of the module"
-  type        = string
-}
-
-variable "module_version" {
-  description = "Version of the module"
-  type        = string
-}
-
-module "example" {
-  source  = var.module_source
-  version = var.module_version
-  
-  # Module inputs...
-}
-```
-
-### Using Locals
-
-```hcl
-locals {
-  module_source  = "terraform-aws-modules/vpc/aws"
-  module_version = "5.0.0"
-}
-
-module "example" {
-  source  = local.module_source
-  version = local.module_version
-  
-  # Module inputs...
-}
-```
-
-### Conditional Module Sources
-
-```hcl
-locals {
-  module_source = var.environment == "prod" ? 
-    "terraform-aws-modules/vpc/aws" : 
-    "./modules/vpc-dev"
-}
-
-module "vpc" {
-  source = local.module_source
-  # ...
-}
-```
-
-## Use Cases
-
-### Use Case 1: Environment-Specific Versions
-
-```hcl
-# versions.tf
-locals {
-  module_versions = {
-    dev     = "4.0.0"  # Older stable version for dev
-    staging = "5.0.0"  # Latest for staging
-    prod    = "4.5.0"  # Proven version for prod
-  }
-  
-  vpc_version = local.module_versions[var.environment]
-}
-
-# main.tf
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = local.vpc_version
-  
-  name = "${var.environment}-vpc"
-  # ...
-}
-```
-
-### Use Case 2: Centralized Version Management
-
-```hcl
-# versions.tf - Single source of truth
-locals {
-  module_versions = {
-    vpc        = "5.0.0"
-    security   = "4.2.0"
-    compute    = "3.1.0"
-    database   = "2.5.0"
-  }
-}
-
-# main.tf
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = local.module_versions.vpc
-}
-
-module "security_group" {
-  source  = "terraform-aws-modules/security-group/aws"
-  version = local.module_versions.security
-}
-
-module "ec2" {
-  source  = "terraform-aws-modules/ec2-instance/aws"
-  version = local.module_versions.compute
-}
-```
-
-### Use Case 3: Dynamic Module Selection
-
-```hcl
-locals {
-  # Choose module based on cloud provider
-  vpc_module_source = {
-    aws   = "terraform-aws-modules/vpc/aws"
-    azure = "Azure/network/azurerm"
-    gcp   = "terraform-google-modules/network/google"
-  }
-  
-  selected_vpc_module = local.vpc_module_source[var.cloud_provider]
-}
-
-module "vpc" {
-  source = local.selected_vpc_module
-  # ...
-}
-```
-
-### Use Case 4: Local vs Remote Modules
-
-```hcl
-locals {
-  # Use local modules in development, remote in production
-  use_local_modules = var.environment == "dev"
-  
-  vpc_source = local.use_local_modules ? 
-    "./modules/vpc" : 
-    "terraform-aws-modules/vpc/aws"
-}
-
-module "vpc" {
-  source  = local.vpc_source
-  version = local.use_local_modules ? null : "5.0.0"
-  # ...
-}
-```
-
-### Use Case 5: CI/CD Integration
-
-```hcl
-# Pass from CI/CD pipeline
-variable "module_version" {
-  description = "Module version from CI/CD"
-  type        = string
-  default     = "5.0.0"  # Fallback
-}
-
-variable "use_canary_modules" {
-  description = "Use canary module versions"
-  type        = bool
-  default     = false
-}
-
-locals {
-  # Canary testing in CI/CD
-  vpc_version = var.use_canary_modules ? 
-    "5.1.0-beta" : 
-    var.module_version
-}
-
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = local.vpc_version
-}
-```
-
-### Use Case 6: Multi-Tenant Configuration
-
-```hcl
-variable "tenant_id" {
-  description = "Tenant identifier"
-  type        = string
-}
-
-locals {
-  # Different module sources per tenant
-  tenant_module_config = {
-    tenant_a = {
-      source  = "git::https://github.com/tenant-a/modules.git//vpc"
-      version = "1.0.0"
-    }
-    tenant_b = {
-      source  = "git::https://github.com/tenant-b/modules.git//vpc"
-      version = "2.0.0"
-    }
-    default = {
-      source  = "terraform-aws-modules/vpc/aws"
-      version = "5.0.0"
-    }
-  }
-  
-  tenant_config = lookup(
-    local.tenant_module_config,
-    var.tenant_id,
-    local.tenant_module_config.default
-  )
-}
-
-module "vpc" {
-  source  = local.tenant_config.source
-  version = local.tenant_config.version
-}
-```
-
-## Instructions
-
-### Task 1: Basic Variable-Driven Module Source
-
-Create a `variables.tf`:
-```hcl
-variable "module_source" {
-  description = "Source path for the configuration module"
-  type        = string
-  default     = "./modules/versioned-config"
-}
-
-variable "module_version" {
-  description = "Version of the module (for registry modules)"
-  type        = string
-  default     = "1.0.0"
-}
-```
-
-Create a `main.tf`:
-```hcl
-terraform {
-  required_version = ">= 1.15.0"
-}
-
-module "config" {
-  source = var.module_source
-  
-  app_name    = "my-app"
-  environment = "dev"
-}
-```
-
-### Task 2: Environment-Specific Versioning
-
-```hcl
-variable "environment" {
-  type = string
-}
-
-locals {
-  # Version strategy per environment
-  module_versions = {
-    dev     = "1.0.0"  # Stable
-    staging = "1.1.0"  # Latest
-    prod    = "1.0.5"  # Proven
-  }
-  
-  config_version = local.module_versions[var.environment]
-}
-
-module "config" {
-  source  = "registry.terraform.io/myorg/config/local"
-  version = local.config_version
-  
-  environment = var.environment
-}
-```
-
-### Task 3: Conditional Module Selection
-
-```hcl
-variable "use_local_development" {
-  description = "Use local modules for development"
-  type        = bool
-  default     = false
-}
-
-locals {
-  module_source = var.use_local_development ? 
-    "./modules/versioned-config" : 
-    "registry.terraform.io/myorg/config/local"
-    
-  module_version = var.use_local_development ? 
-    null :  # Local modules don't have versions
-    "1.0.0"
-}
-
-module "config" {
-  source  = local.module_source
-  version = local.module_version
-  
-  app_name = "my-app"
-}
-```
-
-### Task 4: Centralized Version Management
-
-Create `module-versions.tf`:
-```hcl
-locals {
-  # Central registry of all module versions
-  module_registry = {
-    config = {
-      source  = "./modules/versioned-config"
-      version = "1.0.0"
-    }
-    network = {
-      source  = "terraform-aws-modules/vpc/aws"
-      version = "5.0.0"
-    }
-    compute = {
-      source  = "terraform-aws-modules/ec2-instance/aws"
-      version = "5.2.0"
-    }
-  }
-}
-```
-
-Use in `main.tf`:
-```hcl
-module "config" {
-  source  = local.module_registry.config.source
-  version = local.module_registry.config.version
-  
-  app_name = "my-app"
+variable "network_module_version" {
+  type    = string
+  default = "v1"
+  const   = true
 }
 
 module "network" {
-  source  = local.module_registry.network.source
-  version = local.module_registry.network.version
-  
-  name = "my-vpc"
+  source = "./modules/network/${var.network_module_version}"
 }
 ```
 
-### Task 5: Testing with Version Override
+## Why `const`?
+
+`terraform init` installs modules: it copies local modules into place and downloads registry modules. It does that *before* any plan, so it has to know every `source` and `version` while loading the configuration.
+
+An ordinary variable is only evaluated during plan, and it might depend on things only known then. `const = true` promises Terraform the opposite: this variable has a known, constant value from the start (a default, `-var`, `TF_VAR_`, or a `.tfvars` file), so it's safe to use at `init`. In exchange, a `const` variable can't depend on anything computed during plan.
+
+## Syntax
+
+### A `const` variable in `source`
 
 ```hcl
-variable "override_module_versions" {
-  description = "Override module versions for testing"
-  type        = map(string)
-  default     = {}
+variable "network_module_version" {
+  type    = string
+  default = "v1"
+  const   = true
+}
+
+module "network" {
+  source = "./modules/network/${var.network_module_version}"
+  # ...
+}
+```
+
+### A local built from `const` variables
+
+```hcl
+variable "environment" {
+  type    = string
+  default = "dev"
+  const   = true
+
+  validation {
+    condition     = contains(["dev", "prod"], var.environment)
+    error_message = "environment must be dev or prod."
+  }
 }
 
 locals {
-  default_versions = {
-    config  = "1.0.0"
-    network = "5.0.0"
-  }
-  
-  # Merge defaults with overrides
-  module_versions = merge(
-    local.default_versions,
-    var.override_module_versions
-  )
+  network_module_version = {
+    dev  = "v2"
+    prod = "v1"
+  }[var.environment]
 }
 
-module "config" {
-  source  = "./modules/versioned-config"
-  version = local.module_versions.config
+module "network" {
+  source = "./modules/network/${local.network_module_version}"
+  # ...
 }
 ```
 
-Test with:
-```bash
-# Use default versions
-terraform plan
+`validation` works on `const` variables, and runs at `init`.
 
-# Override for testing
-terraform plan -var='override_module_versions={"config":"1.1.0-beta"}'
+### A `const` variable in `version`
+
+`version` only applies to registry modules:
+
+```hcl
+variable "template_module_version" {
+  type    = string
+  default = "1.0.2"
+  const   = true
+}
+
+module "motd" {
+  source  = "hashicorp/dir/template"
+  version = var.template_module_version
+  # ...
+}
+```
+
+## The Rules, and the Errors
+
+Every error below is real output from Terraform 1.16.4.
+
+**1. The variable must be `const`.** Without `const = true`, `init` stops:
+
+```
+Error: Unknown module source
+
+  on main.tf line 7, in module "app":
+   7:   source = "./modules/${var.variant}"
+
+Only literal values and const variables can be evaluated during init.
+```
+
+**2. No resources, data sources or module outputs.** They don't exist at `init`:
+
+```
+Error: Invalid module source
+
+  on main.tf line 6, in module "app":
+   6:   source = "./modules/${terraform_data.x.output}"
+
+The module source can only reference constant input variables and local
+values.
+```
+
+**3. `plan` and `apply` must use the value `init` used.** Initialise for `dev`, then plan with `-var environment=prod`, and Terraform refuses instead of quietly using the wrong module:
+
+```
+Error: Module source has changed
+
+  on main.tf line 25, in module "network":
+  25:   source = "./modules/network/${local.network_module_version}"
+
+The source address was changed since this module was installed. Run
+"terraform init" to install all modules required by this configuration.
+```
+
+Pass the same values to `init` as to `plan` and `apply`. A `.tfvars` file per environment makes that hard to get wrong: `init`, `plan` and `apply` all read `terraform.tfvars` and `-var-file` the same way.
+
+**4. A `const` variable without a value stops `init`** (`Error: No value for required variable`), just as an ordinary one stops `plan`.
+
+## Hands-On
+
+```
+example/
+├── variables.tf            # environment and template_module_version are const
+├── main.tf                 # module sources built from them
+├── outputs.tf
+├── templates/motd.txt.tmpl
+├── modules/network/
+│   ├── v1/main.tf          # one flat subnet
+│   └── v2/main.tf          # a subnet per tier, same interface
+└── tests/basic.tftest.hcl
+```
+
+The scenario: the network module has a new version, v2. `dev` tries it first; `prod` stays on v1 until v2 has proven itself. One configuration, and the environment picks the version.
+
+### Step 1: dev
+
+```bash
+cd example
+terraform init
+```
+
+```
+Downloading registry.terraform.io/hashicorp/dir/template 1.0.2 for motd...
+- network in modules/network/v2
+```
+
+```bash
+terraform plan
+```
+
+```
+Changes to Outputs:
+  + motd                   = <<-EOT
+        Welcome to the dev lab.
+        Network lab-dev, planned by network module v2.
+    EOT
+  + network_module_version = "v2"
+  + subnets                = {
+      + app = "10.30.20.0/24"
+      + db  = "10.30.30.0/24"
+      + web = "10.30.10.0/24"
+    }
+```
+
+### Step 2: prod, the wrong way and the right way
+
+```bash
+terraform plan -var environment=prod
+# Error: Module source has changed
+```
+
+The installed module is v2, but prod wants v1. Initialise for prod:
+
+```bash
+terraform init -var environment=prod
+# - network in modules/network/v1
+terraform plan -var environment=prod
+#   + network_module_version = "v1"
+#   + subnets                = {
+#       + all = "10.30.0.0/24"
+#     }
+```
+
+### Step 3: a registry module version
+
+```bash
+terraform init -var environment=prod -var template_module_version=1.0.0
+# Downloading registry.terraform.io/hashicorp/dir/template 1.0.0 for motd...
+```
+
+`.terraform/modules/modules.json` records which source and version is installed for each module; have a look.
+
+### Step 4: validation at init
+
+```bash
+terraform init -var environment=qa
+```
+
+You get two errors: the map lookup in the local (`Invalid index`) and the variable's own validation (`environment must be dev or prod.`). Both come from `init`, before any plan.
+
+### Step 5: tests
+
+```bash
+terraform init      # back to the default: dev
+terraform test
+# Success! 2 passed, 0 failed.
+```
+
+## Testing: a Trap
+
+Module sources are resolved by `terraform init`, not by each `run` block in a test. If a run block sets a `const` variable that changes a module source:
+
+```hcl
+run "prod" {
+  command = plan
+
+  variables {
+    environment = "prod"
+  }
+
+  assert {
+    condition     = output.network_module_version == "v1"
+    error_message = "prod should use v1, got ${output.network_module_version}"
+  }
+}
+```
+
+it does **not** switch to v1. It runs against whatever `init` installed (v2 for the default `dev`), with no warning:
+
+```
+prod should use v1, got v2
+```
+
+Unlike `plan`, `terraform test` doesn't report "Module source has changed". So test each module-source combination from its own `init`:
+
+```bash
+terraform init -var environment=prod && terraform test -var environment=prod
+```
+
+The example's tests only cover the default, and say why in a comment.
+
+## Use Cases
+
+### 1. Roll out a new module version environment by environment
+
+What the example does: a map from environment to module version, in one place. Promoting v2 to prod is a one-line change, reviewed like any other.
+
+### 2. One place for registry module versions
+
+```hcl
+variable "module_versions" {
+  type = object({
+    templates = string
+  })
+  default = {
+    templates = "1.0.2"
+  }
+  const = true
+}
+
+module "motd" {
+  source  = "hashicorp/dir/template"
+  version = var.module_versions.templates
+  # ...
+}
+```
+
+### 3. A local checkout while developing a module
+
+```hcl
+variable "use_local_network_module" {
+  type    = bool
+  default = false
+  const   = true
+}
+
+locals {
+  # example.com is a placeholder: use your module's repository
+  network_source = var.use_local_network_module ? "../terraform-libvirt-network" : "git::https://example.com/terraform-libvirt-network.git?ref=v2.1.0"
+}
+
+module "network" {
+  source = local.network_source
+  # ...
+}
+```
+
+`terraform init -var use_local_network_module=true` while you work on the module; the default everywhere else.
+
+### 4. CI chooses the version
+
+```bash
+export TF_VAR_template_module_version=1.0.0
+terraform init
+terraform plan
 ```
 
 ## Best Practices
 
-### 1. Centralize Version Management
-
-✅ **Good** - Single source of truth:
-```hcl
-# versions.tf
-locals {
-  module_versions = {
-    vpc      = "5.0.0"
-    security = "4.2.0"
-  }
-}
-
-# main.tf
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = local.module_versions.vpc
-}
-```
-
-❌ **Avoid** - Scattered versions:
-```hcl
-module "vpc1" {
-  version = "5.0.0"
-}
-
-module "vpc2" {
-  version = "5.0.0"  # Duplicate!
-}
-```
-
-### 2. Document Version Strategy
-
-```hcl
-locals {
-  module_versions = {
-    # VPC module - using 5.0.0 for stability
-    # Tested: 2024-01-15
-    # Next upgrade: 5.1.0 (planned for Q2)
-    vpc = "5.0.0"
-    
-    # Security group - latest stable
-    # Auto-update: patch versions only
-    security = "~> 4.2.0"
-  }
-}
-```
-
-### 3. Use Validation
-
-```hcl
-variable "module_version" {
-  type = string
-  
-  validation {
-    condition     = can(regex("^\\d+\\.\\d+\\.\\d+$", var.module_version))
-    error_message = "Module version must be in semver format (x.y.z)"
-  }
-}
-```
-
-### 4. Provide Defaults
-
-```hcl
-variable "module_source" {
-  description = "Module source path"
-  type        = string
-  default     = "./modules/config"  # Safe default
-}
-```
-
-### 5. Environment-Specific Overrides
-
-```hcl
-# terraform.tfvars (dev)
-module_versions = {
-  vpc = "4.0.0"  # Older stable for dev
-}
-
-# terraform.tfvars (prod)
-module_versions = {
-  vpc = "5.0.0"  # Latest proven for prod
-}
-```
-
-### 6. Use Descriptive Variable Names
-
-✅ **Good**:
-```hcl
-variable "vpc_module_version" {
-  description = "Version of the VPC module"
-}
-```
-
-❌ **Avoid**:
-```hcl
-variable "version" {  # Too generic
-}
-```
-
-## Limitations
-
-### 1. Init-Time Evaluation Constraint ⚠️
-
-**Critical Limitation**: While Terraform 1.15 supports variables and locals in module sources, they must be evaluable during `terraform init`, which has significant restrictions.
-
-**❌ This will FAIL during init** (dynamic expressions):
-```hcl
-locals {
-  # Conditional expression - NOT evaluable during init
-  module_source = var.use_local ? "./modules/config" : "registry.terraform.io/myorg/config"
-}
-
-module "config" {
-  source = local.module_source  # ERROR during terraform init
-}
-```
-
-**Error message**:
-```
-Only literal values and const variables can be evaluated during init.
-```
-
-**✅ This WORKS** (static paths):
-```hcl
-module "config" {
-  source = "./modules/config"  # Static path works
-  
-  # Pass dynamic configuration as inputs instead
-  use_local_config = var.use_local
-}
-```
-
-**Best Practice**: Use static module sources and pass dynamic configuration as module inputs:
-
-```hcl
-# Instead of dynamic sources, use static source with dynamic config
-module "config" {
-  source = "./modules/config"
-  
-  # Module handles logic internally based on inputs
-  environment = var.environment
-  version_tag = var.environment == "prod" ? "1.0.0" : "1.1.0"
-}
-```
-
-### 2. Module Source Must Be Known at Plan Time
-
-```hcl
-# ❌ This won't work - depends on resource output
-module "config" {
-  source = data.external.module_source.result.source
-}
-
-# ✅ This works - depends on input variable with default
-module "config" {
-  source = var.module_source
-}
-```
-
-### 3. Cannot Use Resource Outputs
-
-```hcl
-# ❌ Not allowed
-module "config" {
-  source = aws_s3_bucket.modules.bucket
-}
-
-# ✅ Use variables or locals with literal values
-module "config" {
-  source = var.module_source
-}
-```
-
-### 4. Version Constraints Still Apply
-
-```hcl
-variable "module_version" {
-  default = "5.0.0"
-}
-
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = var.module_version  # Must be valid version string
-}
-```
-
-### 5. Local Modules Don't Have Versions
-
-```hcl
-module "local_config" {
-  source  = "./modules/config"
-  version = "1.0.0"  # ❌ Ignored for local modules
-}
-```
-
-### Practical Implications
-
-Given the init-time evaluation constraint, the most practical use cases for dynamic module sources are:
-
-1. **Environment-specific versions** (version attribute, not source)
-2. **Centralized version management** (version attribute)
-3. **CI/CD version overrides** (version attribute with variables)
-
-For truly dynamic module selection, consider:
-- Using separate Terraform configurations per environment
-- Using workspace-specific `.tfvars` files with different static sources
-- Structuring modules to handle variations internally
+1. **Keep `const` variables few and simple**: environment names, version strings, booleans. Everything else stays an ordinary variable.
+2. **Give them defaults**, and validation, so a plain `terraform init` works and a typo fails early.
+3. **Use a `.tfvars` file per environment** (`-var-file=prod.tfvars` for `init`, `plan` and `apply`) instead of repeating `-var` flags that must match.
+4. **Keep the module interface stable across versions**: v1 and v2 in the example have the same inputs and outputs, so the caller doesn't change when the version does.
+5. **Don't use it to hide what's deployed.** Anyone reading the code should be able to tell which module version each environment gets. A small, explicit map does that; a chain of conditionals doesn't.
+6. **Test each combination from its own `init`** (see [Testing: a Trap](#testing-a-trap)).
 
 ## Summary
 
-Dynamic module sources in Terraform 1.15+ enable:
-
-- ✅ **Environment-specific module versions**
-- ✅ **Centralized version management**
-- ✅ **Dynamic module selection**
-- ✅ **CI/CD integration**
-- ✅ **Testing flexibility**
-- ✅ **Multi-tenant configurations**
-
-Use this feature to:
-- Manage module versions consistently
-- Enable environment-specific configurations
-- Integrate with CI/CD pipelines
-- Simplify testing and upgrades
-- Support multi-tenant architectures
+- Since Terraform 1.15, `source` and `version` can use variables with `const = true` and locals built from them
+- `const` variables get their value before plan (default, `-var`, `TF_VAR_`, `.tfvars`) and can't depend on resources
+- `init` installs modules for the values it sees; `plan` and `apply` must use the same values, or Terraform stops with "Module source has changed"
+- `terraform test` runs against the modules from `init`, whatever a run block sets
 
 ---
 
 **Version Requirements**: Terraform >= 1.15.0  
-**Related Topics**: [Module Design](../README.md), [Variables](../../../TF-100-fundamentals/TF-102-variables-loops/README.md)  
-**Next**: [Advanced Module Patterns](../../TF-202-advanced-patterns/README.md)
+**Related Topics**: [TF-201 Module Design](../README.md), [TF-102 Variables](../../../TF-100-fundamentals/TF-102-variables-loops/README.md)  
+**Reference**: [`variable` block: `const`](https://developer.hashicorp.com/terraform/language/block/variable#const), [`module` block: `source`](https://developer.hashicorp.com/terraform/language/block/module)

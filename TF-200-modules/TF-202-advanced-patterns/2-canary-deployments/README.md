@@ -2,517 +2,275 @@
 
 When managing and deploying infrastructure changes, the strategies of canary and blue-green deployments play a crucial role in ensuring stability and minimizing risks. These methods allow teams to validate infrastructure updates in a controlled manner, reducing the potential impact of configuration errors or compatibility issues.
 
+In this section you build both with libvirt: two pools of web servers, one on Ubuntu 22.04 (blue) and one on Ubuntu 24.04 (green), and a load balancer that decides how much traffic each pool gets.
+
 ## Table of Contents
 
-[Tasks for blue-green deployment](#tasks-for-blue-green-deployment)
-- [Task 1: Multiple virtual machines](#task-1-multiple-virtual-machines)
-  - [1.1 Edit the network module](#11-edit-the-network-module)
-  - [1.2 Add subnet_id output](#12-add-subnet_id-output)
-  - [1.3 Edit the virtual machine module](#13-edit-the-virtual-machine-module)
-  - [1.4 Add the Virtual Machine Extension and use it to install Nginx](#14-add-the-virtual-machine-extension-and-use-it-to-install-nginx)
-  - [1.5 Link the security group to the network interface](#15-link-the-security-group-to-the-network-interface)
-  - [1.6 Add outputs for the network interface id in the virtual machine module](#16-add-outputs-for-the-network-interface-id-in-the-virtual-machine-module)
-- [Task 2: Add a load balancer with a public IP address](#task-2-add-a-load-balancer-with-a-public-ip-address)
-  - [2.1 Create the IP address together with the load balancer](#21-create-the-ip-address-together-with-the-load-balancer)
-  - [2.2 Add backend pool](#22-add-backend-pool)
-  - [2.3 Add health probe and rules](#23-add-health-probe-and-rules)
-  - [2.4 Add variables](#24-add-variables)
-  - [2.5 Add outputs](#25-add-outputs)
-- [Task 3: Update the azure/main.tf file](#task-3-update-the-azure/main.tf-file)
-  - [3.1 Add the network security group](#31-add-the-network-security-group)
-  - [3.2 Associate the network security group with the network interface](#32-associate-the-network-security-group-with-the-network-interface)
-  - [3.3 Update the variables file](#33-update-the-variables-file)
-- [Task 4: Test your new module](#task-4-test-your-new-module)
-  - [4.1 Update the root module](#41-update-the-root-module)
-  - [4.2 Run Terraform](#42-run-terraform)
-  - [4.3 Test the new infrastructure](#43-test-the-new-infrastructure)
-  - [4.4 Add a new virtual machine setup running Ubuntu 24.04 LTS](#44-add-a-new-virtual-machine-setup-running-ubuntu-2404-lts)
-  - [4.5 Run Terraform](#45-run-terraform)
-  - [4.6 Test the new infrastructure](#46-test-the-new-infrastructure)
-  - [4.7 Remove VM-1](#47-remove-vm-1)
-  - [4.8 Clean up](#48-clean-up)
+- [How the example is built](#how-the-example-is-built)
+- [Task 1: Deploy the blue pool](#task-1-deploy-the-blue-pool)
+- [Task 2: Put a load balancer in front](#task-2-put-a-load-balancer-in-front)
+- [Task 3: Add a green canary pool](#task-3-add-a-green-canary-pool)
+- [Task 4: Shift the traffic](#task-4-shift-the-traffic)
+- [Task 5: Retire the blue pool](#task-5-retire-the-blue-pool)
+- [Task 6: Roll a pool in place with create_before_destroy](#task-6-roll-a-pool-in-place-with-create_before_destroy)
+- [Task 7: Clean up](#task-7-clean-up)
 - [Extra tasks for the interested](#extra-tasks-for-the-interested)
+- [Canary Deployments for Infrastructure](#canary-deployments-for-infrastructure)
+- [Blue-Green Deployments for Infrastructure](#blue-green-deployments-for-infrastructure)
+- [Comparison](#comparison)
 
-## Tasks for blue-green deployment
+## How the example is built
 
-### Task 1: Multiple virtual machines
+Everything is driven by one map variable, `vm_pools`. Each key is a pool, and each pool is a module instance:
 
-Start by using the code in the example folder, we need to modify some of the modules to be able to deploy multiple virtual machines.
-
-#### 1.1 Edit the network module
-First we need to migrate the network interface creation out of the network module and into the virtual machine module. 
-To do this, we need to move the code block below to the virtual machine module.
 ```hcl
-resource "azurerm_network_interface" "example" {
-  name                = "${var.server_name}-nic"
-  location            = var.location
-  resource_group_name = var.resource_group_name
-
-  ip_configuration {
-    name                          = "internal"
-    subnet_id                     = azurerm_subnet.example.id
-    private_ip_address_allocation = "Dynamic"
+vm_pools = {
+  blue = {
+    base_image_url = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+    vm_count       = 2
+    weight         = 100
   }
 }
 ```
 
-As you can see, we need the subnet_id to be able to create the network interface, this value is currently being passed in from the network module.
+| File | What it does |
+|------|--------------|
+| `main.tf` | Shared network and storage pool, one `module "vm_pool"` per map entry, and the load balancer config |
+| `modules/libvirt-vm/` | One pool: base image, disks, cloud-init and VMs. Every VM installs nginx and serves a page saying which pool and OS answered |
+| `templates/haproxy.cfg.tftpl` | HAProxy config template with every VM and its pool's weight |
 
-#### 1.2 Add subnet_id output
-In the network module, add the following output for the subnet_id.
-```hcl
-output "subnet_id" {
-  value = azurerm_subnet.example.id
-}
-```
-And remove the network_interface_id output.
+libvirt has no load balancer resource, so Terraform writes an HAProxy config to `out/haproxy.cfg` and you run HAProxy on your host. That turns out to be a feature: you can read exactly what the load balancer is told to do.
 
-#### 1.3 Edit the virtual machine module
-In the virtual machine module, we need to add a variable for the subnet_id of the type string. Also, change the subnet_id in the resource block to use this variable. And update the creation of the vm to use the new resource that is locally available within the module. 
+## Task 1: Deploy the blue pool
 
-We also need to add a variable for the security group id, in this case it is the http security group id.
-```hcl
-variable "http_security_group_id" {
-  type = string
-}
-```
-
-We also need to need to add a variable for the source image reference of the virtual machine, an example of how to do this can be seen below.
-```hcl
-variable "source_image_reference" {
-  type = object({
-    publisher = string
-    offer     = string
-    sku       = string
-    version   = string
-  })
-  suffix = string
-}
-```
-Don't forget to update the resource block to use this variable.
-
-#### 1.4 Add the Virtual Machine Extension and use it to install Nginx
-
-This is an example code of how you can do this:
-```hcl
-# Enable virtual machine extension and install Nginx
-resource "azurerm_virtual_machine_extension" "example" {
-  name                 = "Nginx"
-  virtual_machine_id   = azurerm_linux_virtual_machine.example.id
-  publisher            = "Microsoft.Azure.Extensions"
-  type                 = "CustomScript"
-  type_handler_version = "2.0"
-
-  settings = <<SETTINGS
- {
-  "commandToExecute": "sudo apt-get update && sudo apt-get install nginx -y && echo \"Hello World from $(hostnamectl)\" > /var/www/html/index.html && sudo systemctl restart nginx"
- }
-SETTINGS
-}
-```
-
-#### 1.5 Link the security group to the network interface
-
-This can be done by adding the following code to the virtual machine module.
-```hcl
-resource "azurerm_network_interface_security_group_association" "example" {
-  network_interface_id      = azurerm_network_interface.example.id
-  network_security_group_id = var.http_security_group_id
-}
-```
-
-#### 1.6 Add outputs for the network interface id in the virtual machine module
-Add the following outputs to the virtual machine module.
-```hcl
-output "network_interface_id" {
-  value = azurerm_network_interface.example.id
-}
-```
-
-Now, we have a module that can create virtual machines and it owns the respective network interface for said machine.
-You need to remember to remove the network interface variable and the output from the network module.
-
-### Task 2: Add a load balancer with a public IP address
-
-#### 2.1 Create the IP address together with the load balancer
-
-Create a new module for the load-balancer, and add the following code to the main.tf file you just created.
-```hcl
-terraform {
-  required_providers {
-    azurerm = {
-      source  = "hashicorp/azurerm"
-      version = "=4.0.1"
-    }
-  }
-}
-
-resource "azurerm_public_ip" "example" {
-  name                = var.public_ip_name
-  location            = var.location
-  resource_group_name = var.resource_group_name
-  allocation_method   = "Static"
-  sku                 = "Standard"
-}
-
-# Create Public Load Balancer
-resource "azurerm_lb" "example" {
-  name                = var.load_balancer_name
-  location            = var.location
-  resource_group_name = var.resource_group_name
-  sku                 = "Standard"
-
-  frontend_ip_configuration {
-    name                 = var.public_ip_name
-    public_ip_address_id = azurerm_public_ip.example.id
-  }
-}
-```
-
-This will create a public IP address and a load balancer. Next up we need to add rules, backend pools and health probes to the load balancer.
-
-#### 2.2 Add backend pool
-
-This part will need information from the virtual machine module. Specifically, we need the network interface id's for the virtual machines we want to add to the backend pool.
-
-Add the following code to the load balancer module.
-```hcl
-resource "azurerm_lb_backend_address_pool" "example" {
-  loadbalancer_id      = azurerm_lb.example.id
-  name                 = "virtual-machine-pool"
-}
-
-resource "azurerm_network_interface_backend_address_pool_association" "example" {
-  count                   = length(var.network_interface_ids)
-  network_interface_id    = var.network_interface_ids[count.index]
-  ip_configuration_name   = "internal"
-  backend_address_pool_id = azurerm_lb_backend_address_pool.example.id
-}
-```
-
-#### 2.3 Add health probe and rules
-
-Add the following code to the load balancer module.
-```hcl
-resource "azurerm_lb_probe" "example" {
-  loadbalancer_id     = azurerm_lb.example.id
-  name                = "probe"
-  port                = 80
-}
-
-resource "azurerm_lb_rule" "example" {
-  loadbalancer_id                = azurerm_lb.example.id
-  name                           = "inbound"
-  protocol                       = "Tcp"
-  frontend_port                  = 80
-  backend_port                   = 80
-  disable_outbound_snat          = true
-  frontend_ip_configuration_name = var.public_ip_name
-  probe_id                       = azurerm_lb_probe.example.id
-  backend_address_pool_ids       = [azurerm_lb_backend_address_pool.example.id]
-}
-
-resource "azurerm_lb_outbound_rule" "example" {
-  name                    = "outbound"
-  loadbalancer_id         = azurerm_lb.example.id
-  protocol                = "Tcp"
-  backend_address_pool_id = azurerm_lb_backend_address_pool.example.id
-
-  frontend_ip_configuration {
-    name = var.public_ip_name
-  }
-}
-```
-
-#### 2.4 Add variables
-
-Add the following variables to the load balancer module.
-```hcl
-variable "resource_group_name" {
-  type = string
-}   
-
-variable "location" {
-  type = string
-}
-
-variable "public_ip_name" {
-  type = string
-}
-
-variable "load_balancer_name" {
-  type = string
-    }
-
-variable "network_interface_ids" {
-  type = list(string)
-}
-```
-
-#### 2.5 Add outputs
-
-Add an output for the public IP address.
-```hcl
-output "public_ip_address" {
-  value = azurerm_public_ip.example.ip_address
-}
-```
-
-### Task 3: Update the azure/main.tf file
-
-#### 3.1 Add the load balancer module
-Update the `azure/main.tf` file to use the new modules and variables.
-
-The call to the load balancer module should look something like this.
-```hcl
-module "load-balancer" {
-  source = "./load-balancer"
-  resource_group_name = var.resource_group_name
-  location = data.azurerm_resource_group.example.location
-  public_ip_name = format("%s-public-ip", var.server_name)
-  load_balancer_name = format("%s-load-balancer", var.server_name)
-  network_interface_ids = [for vm in module.virtual-machine: vm.network_interface_id]
-}
-```
-
-#### 3.2 Create a new variable for handling the virtual machine setup
-
-To do this, we will create a map of virtual machine objects, so that we can easily deploy different virtual machines with different configurations into the same load balancer. 
-Here is an example of how you can do this.
-```hcl
-variable "virtual_machine_setup" {
-  type = map(object({
-    source_image_reference = object({
-      publisher = string
-      offer     = string
-      sku       = string
-      version   = string
-    })
-    suffix = string
-  }))
-  default = {
-    "vm-1" = {
-      source_image_reference = {
-        publisher = "Canonical"
-        offer     = "0001-com-ubuntu-server-jammy"
-        sku       = "22_04-lts"
-        version   = "latest"
-      }
-      suffix = "ubuntu-22-04-lts"
-    }
-  }
-}
-```
-
-Feel free to add more properties to the virtual machine object, but make sure to update the module to accept these new properties. One example would be to add flavor names, as well as the amount of virtual machines to deploy.
-
-#### 3.3 Add outputs to the `azure/main.tf` file
-
-Add the following outputs to the `azure/main.tf` file.
-```hcl
-output "public_ip" {
-  value = module.load-balancer.public_ip
-}
-```
-
-#### 3.4 Update the virtual machine module to use the new variables
-
-Update the virtual machine module to use the new variables.
-
-This can be done by rewriting the azure/main.tf file to use the new variables.
-```hcl
-module "virtual-machine" {
-  source = "./virtual-machine"
-  for_each = var.virtual_machine_setup
-  resource_group_name = data.azurerm_resource_group.example.name
-  location            = data.azurerm_resource_group.example.location
-  public_ssh_key      = var.public_ssh_key
-  server_name         = format("%s-%s", var.server_name, each.value.suffix)
-  source_image_reference = each.value.source_image_reference
-  subnet_id = module.network.subnet_id
-  http_security_group_id = module.security-group.http_security_group_id
-}
-```
-
-### Task 4: Test your new module
-
-#### 4.1 Update your root module
-
-Your root module should look something like this:
-> main.tf
-```hcl
-terraform {
-  required_providers {
-    azurerm = {
-      source  = "hashicorp/azurerm"
-      version = "=4.0.1"
-    }
-  }
-}
-
-provider "azurerm" {
-  features {}
-  subscription_id = var.subscription_id
-}
-
-module "azure-vm" {
-  source = "./modules/azure/"
-  resource_group_name = var.resource_group_name
-  server_name = var.server_name
-  public_ssh_key = var.public_ssh_key
-  virtual_machine_setup = var.virtual_machine_setup
-}
-```
-
-> variables.tf
-```hcl
-variable "resource_group_name" {
-  type = string
-}
-
-variable "server_name" {
-  type = string
-}
-
-variable "public_ssh_key" {
-  type = string
-}
-
-variable "virtual_machine_setup" {
-  type = map(object({
-    source_image_reference = object({
-      publisher = string
-      offer     = string
-      sku       = string
-      version   = string
-    })
-    suffix = string
-  }))
-}
-
-variable "subscription_id" {
-  type = string
-}
-```
-
-> outputs.tf
-```hcl
-output "public_ip" {
-  value = "http://${module.azure-vm.public_ip}"
-}
-```
-
-> terraform.tfvars
-```hcl
-virtual_machine_setup = {
-  "vm-1" = {
-    source_image_reference = {
-      publisher = "Canonical"
-      offer     = "0001-com-ubuntu-server-jammy"
-      sku       = "22_04-lts"
-      version   = "latest"
-    }
-    suffix = "ubuntu-22-04-lts"
-  },
-  "vm-2" = {
-    source_image_reference = {
-      publisher = "Canonical"
-      offer     = "ubuntu-24_04-lts-daily"
-      sku       = "server"
-      version   = "24.04.202408220"
-    }
-    suffix = "ubuntu-24-04-lts"
-  }
-}
-```
-
-> terraform.tfvars
-```hcl
-server_name = "<your-server-name>"
-resource_group_name = "<your-resource-group-name>"
-public_ssh_key = "<your-public-ssh-key>"
-virtual_machine_setup = {
-  "vm-1" = {
-    source_image_reference = {
-      publisher = "Canonical"
-      offer     = "0001-com-ubuntu-server-jammy"
-      sku       = "22_04-lts"
-      version   = "latest"
-    }
-    suffix = "ubuntu-22-04-lts"
-  }
-```
-
-#### 4.2 Run Terraform
-
-Run the following commands to run Terraform.
 ```bash
+cd example
 terraform init
-terraform plan
 terraform apply
 ```
-#### 4.3 Test the new infrastructure
 
-Use the output from the Terraform apply command to access the new infrastructure, either through your browser or by using curl.
+The first apply downloads the Ubuntu image, so it takes a minute or two depending on your connection. After that you have two VMs. The outputs show their addresses:
 
-Example with curl:
-```bash
-curl $(terraform output -raw public_ip)
 ```
-#### 4.4 Add a new virtual machine setup running Ubuntu 24.04 LTS
+backends = [
+  { "ip" = "10.210.0.170", "name" = "blue-e2f3-vm-0", "pool" = "blue", "weight" = 100 },
+  { "ip" = "10.210.0.176", "name" = "blue-e2f3-vm-1", "pool" = "blue", "weight" = 100 },
+]
+generations = { "blue" = "e2f3" }
+```
 
-Add the following to the terraform.tfvars file after the existing vm-1 entry. Make sure the {} are closed correctly.
+Your IPs and the four-character suffix will differ. The suffix is the pool's **generation**; Task 6 explains why it's there.
+
+cloud-init needs another 15 to 30 seconds to install nginx. Then ask each VM directly:
+
+```bash
+curl http://10.210.0.170/
+# pool=blue vm=0 os=Ubuntu 22.04.5 LTS
+curl http://10.210.0.176/
+# pool=blue vm=1 os=Ubuntu 22.04.5 LTS
+```
+
+If you get the default "Welcome to nginx!" page, cloud-init hasn't written the custom page yet. Wait a few seconds and try again.
+
+## Task 2: Put a load balancer in front
+
+Have a look at `out/haproxy.cfg`. The interesting part is at the bottom:
+
+```
+backend pools
+    balance roundrobin
+    # pool: blue
+    server blue-e2f3-vm-0 10.210.0.170:80 weight 100 check
+    # pool: blue
+    server blue-e2f3-vm-1 10.210.0.176:80 weight 100 check
+```
+
+Start HAProxy with that config. With Docker:
+
+```bash
+docker run -d --name tf202-lb --network host \
+  -v "$PWD/out:/usr/local/etc/haproxy:ro" haproxy:3.0-alpine
+```
+
+Or without Docker: `sudo apt install haproxy` and `haproxy -f out/haproxy.cfg`.
+
+Now ask the load balancer instead of the VMs:
+
+```bash
+for i in $(seq 1 6); do curl -s http://localhost:8080/; done
+# pool=blue vm=0 os=Ubuntu 22.04.5 LTS
+# pool=blue vm=1 os=Ubuntu 22.04.5 LTS
+# pool=blue vm=0 os=Ubuntu 22.04.5 LTS
+# ...
+```
+
+Round robin across the blue pool. This is the "current production" you're about to upgrade.
+
+## Task 3: Add a green canary pool
+
+So how do you try Ubuntu 24.04 without betting everything on it? You add it next to what already works, and give it a small share of the traffic.
+
+Create `terraform.tfvars`:
+
 ```hcl
-virtual_machine_setup = {
-  "vm-2" = {
-    source_image_reference = {
-      publisher = "Canonical"
-      offer     = "ubuntu-24_04-lts-daily"
-      sku       = "server"
-      version   = "24.04.202408220"
-    }
-    suffix = "ubuntu-24-04-lts"
+vm_pools = {
+  blue = {
+    base_image_url = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+    vm_count       = 2
+    weight         = 90
   }
+  green = {
+    base_image_url = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+    vm_count       = 1
+    weight         = 10
+  }
+}
 ```
 
-#### 4.5 Run Terraform
+Run `terraform plan` first and read it carefully:
 
-Run the following commands to run Terraform.
+```
+  # local_file.haproxy_cfg must be replaced
+  # module.vm_pool["green"].libvirt_domain.vm[0] will be created
+  # ...
+Plan: 7 to add, 0 to change, 1 to destroy.
+```
+
+Nothing in the blue pool is touched. The one "destroy" is the config file: `local_file` replaces the file whenever its content changes. That's the whole point of the pattern. The new version is built next to the old one, and the old one keeps serving while you check the new one.
+
+Apply, wait for the green VM to answer, then tell HAProxy to reload its config:
+
 ```bash
-terraform plan
+terraform apply
+docker kill -s HUP tf202-lb        # or: sudo systemctl reload haproxy
+```
+
+Send 190 requests and count who answered:
+
+```bash
+for i in $(seq 1 190); do curl -s http://localhost:8080/; done | sort | uniq -c
+#   90 pool=blue vm=0 os=Ubuntu 22.04.5 LTS
+#   90 pool=blue vm=1 os=Ubuntu 22.04.5 LTS
+#   10 pool=green vm=0 os=Ubuntu 24.04.5 LTS
+```
+
+Why 10 out of 190 and not 10%? The weight is **per VM**. Two blue VMs at 90 plus one green VM at 10 gives green 10/190, a little over 5%. If you want the pool as a whole to get 10%, you have to take the number of VMs into account.
+
+## Task 4: Shift the traffic
+
+The canary looks healthy. Move the weights in steps, applying and reloading HAProxy each time:
+
+| Step | blue weight | green weight | Green share (2 blue VMs, 1 green VM) |
+|------|-------------|--------------|--------------------------------------|
+| Canary | 90 | 10 | ~5% |
+| Half | 50 | 100 | 50% |
+| Green only | 0 | 100 | 100% |
+
+A weight of 0 means HAProxy sends a server no new traffic, but the VMs are still there. That's your instant rollback: if green misbehaves, set blue back to 100 and green to 0, apply, reload. No VM needs to be created for you to go back.
+
+Going straight from 100/0 to 0/100 in one step is a blue-green switch instead of a canary. Same code, different habit.
+
+The variable has two validations you might run into: weights must be between 0 and 256 (HAProxy's range), and at least one pool must have a weight above 0.
+
+## Task 5: Retire the blue pool
+
+When green has carried all the traffic for a while, remove blue from `terraform.tfvars` and scale green to two VMs:
+
+```hcl
+vm_pools = {
+  green = {
+    base_image_url = "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+    vm_count       = 2
+    weight         = 100
+  }
+}
+```
+
+```bash
+terraform apply
+docker kill -s HUP tf202-lb
+for i in $(seq 1 20); do curl -s http://localhost:8080/; done | sort | uniq -c
+#   10 pool=green vm=0 os=Ubuntu 24.04.5 LTS
+#   10 pool=green vm=1 os=Ubuntu 24.04.5 LTS
+```
+
+Compare `terraform output generations` before and after. Green's generation didn't change when it went from one VM to two. Scaling adds VMs, it doesn't rebuild the existing ones.
+
+## Task 6: Roll a pool in place with create_before_destroy
+
+Pools are great for big changes like a new OS. But what about a small one, like giving green more memory? Adding a whole new pool for that is a lot of ceremony.
+
+Terraform's answer is `create_before_destroy`: build the replacement first, then remove the old one. The example uses it on every volume and VM in the module. There's a catch, though, and an earlier version of this very example walked straight into it:
+
+```
+Error: Domain Creation Failed
+... already exists with uuid 37c05875-a28f-4cbd-a738-3a2b1bbac894
+```
+
+With `create_before_destroy`, the old and the new VM exist at the same time for a moment. libvirt won't allow two VMs with the same name, and the VMs were named `canary-vm-0` both before and after the change.
+
+That's what the generation suffix fixes. In `modules/libvirt-vm/main.tf`:
+
+```hcl
+resource "random_id" "generation" {
+  byte_length = 2
+
+  keepers = {
+    base_image_url = var.base_image_url
+    memory_mb      = var.memory_mb
+    vcpu_count     = var.vcpu_count
+  }
+}
+
+locals {
+  prefix = "${var.pool_name}-${random_id.generation.hex}"
+}
+```
+
+When a keeper changes, `random_id` gets a new value. Every name built from `local.prefix` changes with it, and `replace_triggered_by = [random_id.generation]` makes sure the volumes and VMs are replaced rather than updated in place. `vm_count` is deliberately not a keeper, which is why scaling in Task 5 didn't roll the pool.
+
+Try it. Give green 1536 MiB of memory:
+
+```hcl
+    memory_mb      = 1536
+```
+
+```bash
 terraform apply
 ```
 
-You should see that you will create about 5-6 new resources, all of which are related to the new virtual machine.
+Watch the order of events in the output:
 
-#### 4.6 Test the new infrastructure
-
-Use the output from the Terraform apply command to access the new infrastructure, either through your browser or by using curl.
-
-Run it a couple of times to see how it cycles through the virtual machines. The text on the website should change every now and then as the loadbalancer distributes the traffic across the new virtual machine. One will report an Operating System version of 22.04 and the other 24.04.
-
-Example with curl:
-```bash
-curl $(terraform output -raw public_ip)
+```
+module.vm_pool["green"].libvirt_domain.vm[0]: Creation complete [name=green-<new>-vm-0]
+module.vm_pool["green"].libvirt_domain.vm[1]: Creation complete [name=green-<new>-vm-1]
+local_file.haproxy_cfg: Creation complete
+module.vm_pool["green"].libvirt_domain.vm[0] (deposed object ...): Destroying... [name=green-<old>-vm-0]
+module.vm_pool["green"].libvirt_domain.vm[1] (deposed object ...): Destroying... [name=green-<old>-vm-1]
 ```
 
-#### 4.7 Remove VM-1
+New VMs first, then the new load balancer config, then the old VMs. The VMs use `wait_for_ip`, so Terraform doesn't consider a new VM created until it has an address.
 
-This can be done by removing the entire vm-1 block from the virtual_machine_setup map in your terraform.tfvars file. Or by commenting it out. Run Terraform again and see how it affects the deployment. It should destroy 5-6 resources, and recreate 1 of them. 
+One gap remains: HAProxy still has the old config loaded until you reload it, and by then the old VMs are gone. In a real pipeline the reload is part of the deployment. The extra tasks below show one way to make Terraform do it.
 
-The recreation will be the association with the load balancer. This will cause a temporary downtime, as the old virtual machine will be removed from the load balancer. 
+> 💡 The rule is general: `create_before_destroy` only works when the new object can exist next to the old one. Anything that must be unique, like VM names, volume names, bucket names or DNS records, needs a name that changes on replacement.
 
-A solution for this downtime would be to ensure that the old virtual machine is registered as unhealthy in the health probe. 
+## Task 7: Clean up
 
-#### 4.8 Clean up
+```bash
+terraform destroy
+docker rm -f tf202-lb
+```
 
-When you are done testing, you can remove the virtual machine setup from the terraform.tfvars file and run `terraform destroy`. If you just remove the blocks inside the virtual_machine_setup map, you will only remove the virtual machines, and the rest of the infrastructure will remain. 
+## Extra tasks for the interested
 
-#### Extra tasks for the interested
+1. **Reload HAProxy automatically.** Terraform 1.14 added actions, and the `hashicorp/local` provider has a `local_command` action. Trigger one from `local_file.haproxy_cfg` with `events = [after_create]` that runs `docker kill -s HUP tf202-lb`. Why `after_create` and not `after_update`? (Hint: look at what the plan says about the config file in Task 3.) See [TF-307](../../../TF-300-advanced/TF-307-query-actions/README.md).
+2. **Make the weight mean "share of traffic".** Change the template so a pool's weight is spread across its VMs, so `weight = 10` gives the pool 10% no matter how many VMs it has.
+3. **Health checks that know about your app.** HAProxy's `check` only tests that port 80 answers. Add `option httpchk GET /` and think about what a real health endpoint for your application would need to report.
 
 Consider other deployments that can use the same infrastructure, such as a web application. How would you deploy this? What changes would you need to make?
 
-I've successfully deployed self-managed Kubernetes clusters on Openstack using the same structure, and managed to update the Kubernetes version without any downtime. 
+I've successfully deployed self-managed Kubernetes clusters on Openstack using the same structure, and managed to update the Kubernetes version without any downtime.
 
 Here is an example from the tfvars file used there:
 ```hcl
@@ -616,3 +374,5 @@ Blue-green deployments for infrastructure involve maintaining two identical envi
 | **Resource Utilization**    | Temporary increased usage                       | Requires duplicate environments                             |
 | **Implementation Complexity** | High, requires sophisticated monitoring and traffic management | Moderate, needs careful traffic management     |
 | **Usage Scenarios**         | Ideal for continuous incremental deliveries     | Ideal for major updates requiring extensive testing        |
+
+In this lab you did both with the same code. The difference between a canary and a blue-green switch turned out to be how you move the weights, not how you build the infrastructure. Pick the strategy per change: a new OS deserves a canary, a config tweak is fine with a blue-green switch or an in-place roll.

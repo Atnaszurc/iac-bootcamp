@@ -3,9 +3,9 @@
 # Provider: dmacvicar/libvirt (mocked — no libvirt daemon required)
 # Run: terraform test (from the example/ directory)
 #
-# Teaching focus: libvirt_network modes (nat, none), DNS configuration
+# Teaching focus: forward mode (nat vs none), ips + DHCP ranges, DNS
 
-# mock_provider bypasses the real libvirt schema so tests run without a daemon
+# mock_provider fakes provider responses so tests run without a daemon
 mock_provider "libvirt" {}
 
 run "plan_nat_network_defaults" {
@@ -16,8 +16,25 @@ run "plan_nat_network_defaults" {
     error_message = "NAT network name should be '<network_name>-net' with default network_name 'tf-103'"
   }
 
-  # Note: libvirt_network in 0.9.3 doesn't expose mode attribute
-  # Networks are automatically configured as NAT with DHCP
+  assert {
+    condition     = libvirt_network.main.forward.mode == "nat"
+    error_message = "Main network should forward traffic with NAT"
+  }
+
+  assert {
+    condition     = libvirt_network.main.ips[0].address == "10.10.0.1" && libvirt_network.main.ips[0].prefix == 24
+    error_message = "Host address should be 10.10.0.1/24 for the default CIDR"
+  }
+
+  assert {
+    condition     = libvirt_network.main.ips[0].dhcp.ranges[0].start == "10.10.0.100" && libvirt_network.main.ips[0].dhcp.ranges[0].end == "10.10.0.200"
+    error_message = "DHCP should hand out .100 to .200"
+  }
+
+  assert {
+    condition     = libvirt_network.main.domain.name == "tf-103.local" && libvirt_network.main.dns.enable == "yes"
+    error_message = "DNS should be enabled for the tf-103.local domain"
+  }
 
   assert {
     condition     = libvirt_network.main.autostart == true
@@ -33,8 +50,15 @@ run "plan_isolated_network_defaults" {
     error_message = "Isolated network name should be '<network_name>-isolated' with default network_name 'tf-103'"
   }
 
-  # Note: libvirt_network in 0.9.3 doesn't support isolated mode
-  # All networks are NAT-enabled
+  assert {
+    condition     = libvirt_network.isolated.forward == null
+    error_message = "An isolated network must not have a forward mode"
+  }
+
+  assert {
+    condition     = libvirt_network.isolated.ips[0].dhcp == null
+    error_message = "The isolated network uses static addressing (no DHCP)"
+  }
 
   assert {
     condition     = libvirt_network.isolated.autostart == false
@@ -59,4 +83,19 @@ run "plan_with_custom_network_name" {
     condition     = libvirt_network.isolated.name == "lab-isolated"
     error_message = "Isolated network name should use custom network_name"
   }
+
+  assert {
+    condition     = libvirt_network.main.ips[0].address == "192.168.50.1"
+    error_message = "Host address should follow the custom CIDR"
+  }
+}
+
+run "reject_invalid_cidr" {
+  command = plan
+
+  variables {
+    network_cidr = "10.10.0.0/33"
+  }
+
+  expect_failures = [var.network_cidr]
 }

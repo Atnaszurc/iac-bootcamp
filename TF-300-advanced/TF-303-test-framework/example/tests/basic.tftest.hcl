@@ -17,8 +17,8 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 variables {
-  environment = "dev"
-  log_level   = "info"
+  environment  = "dev"
+  log_level    = "info"
   enable_debug = false
   tags = {
     Team    = "platform"

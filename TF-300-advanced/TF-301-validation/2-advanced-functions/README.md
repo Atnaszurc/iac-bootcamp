@@ -2,301 +2,278 @@
 
 ## Introduction
 
-This lesson covers advanced usage of Terraform functions, including function chaining and the new provider-defined functions introduced in Terraform 1.8. We'll focus on Azure-specific examples and use cases.
+This lesson covers advanced usage of Terraform functions: chaining built-in functions into small pipelines, and **provider-defined functions** (Terraform 1.8+), which providers ship alongside their resources and call as `provider::<name>::<function>()`.
+
+The examples come from running a libvirt lab: naming VMs, building descriptions, checking the age of a base image, splitting a network range, and turning human-readable durations into numbers.
+
+**Example**: [`example/`](./example/) — every task below, plus 9 tests. No infrastructure is created: `random_string` is the only resource, and the `time` provider's functions run locally.
+
+```bash
+cd example
+terraform init
+terraform apply
+terraform output
+terraform test
+```
 
 ## Table of Contents
 - [Function Chaining](#function-chaining)
-- [Provider-Defined Functions (Azure)](#provider-defined-functions-azure)
+- [Provider-Defined Functions](#provider-defined-functions)
 - [Combining Built-in and Provider-Defined Functions](#combining-built-in-and-provider-defined-functions)
 - [Best Practices](#best-practices)
-- [Tasks](#tasks)
-- [Task 1: Resource Naming Convention](#task-1-resource-naming-convention)
-- [Task 2: Tag Manipulation](#task-2-tag-manipulation)
-- [Task 3: Resource ID Parsing and Formatting](#task-3-resource-id-parsing-and-formatting)
-- [Task 4: Subnet CIDR Calculation](#task-4-subnet-cidr-calculation)
-- [Task 5: Resource ID Normalization and Validation](#task-5-resource-id-normalization-and-validation)
-- [Task 6: Naming Function with Lookup and Error Handling](#task-6-naming-function-with-lookup-and-error-handling)
-
+- [Task 1: VM Naming Convention](#task-1-vm-naming-convention)
+- [Task 2: Labels to Description](#task-2-labels-to-description)
+- [Task 3: Base Image Age](#task-3-base-image-age)
+- [Task 4: Network per Tier](#task-4-network-per-tier)
+- [Task 5: Durations](#task-5-durations)
+- [Task 6: Name Builder with Lookup and Error Handling](#task-6-name-builder-with-lookup-and-error-handling)
 
 ## Function Chaining
 
-Function chaining involves using the output of one function as the input for another. This technique allows for complex data transformations in a single expression.
+Function chaining uses the output of one function as the input of the next.
 
-### Example: Formatting and Manipulating Strings
+### Example: Formatting a Name
 
 ```hcl
 locals {
-  raw_name = "MY-APP-PROD-001"
-  formatted_name = lower(replace(local.raw_name, "-", ""))
+  raw_name       = "MY-APP PROD 001"
+  formatted_name = replace(lower(local.raw_name), " ", "-")
 }
+
 output "formatted_name" {
-  value = local.formatted_name
+  value = local.formatted_name # "my-app-prod-001"
 }
 ```
 
-In this example, we chain the `lower()` and `replace()` functions to transform the string.
+Read chains inside out: `lower()` runs first, then `replace()`.
 
 ### Example: Complex Data Manipulation
 
-````hcl
-variable "tags" {
+```hcl
+variable "labels" {
   type = map(string)
   default = {
-    "Environment" = "Production"
-    "Project"     = "MyApp"
-    "Owner"       = "DevOps Team"
+    Owner   = "devops-team"
+    Project = "iac-bootcamp"
+    Tier    = "web"
   }
 }
 
 locals {
-  tag_list = [for k, v in var.tags : "${upper(k)}:${title(v)}"]
-  tag_string = join(", ", local.tag_list)
+  label_pairs = [for k in sort(keys(var.labels)) : "${lower(k)}=${var.labels[k]}"]
+  description = join(";", local.label_pairs)
 }
 
-output "formatted_tags" {
-  value = local.tag_string
+output "description" {
+  value = local.description # "owner=devops-team;project=iac-bootcamp;tier=web"
 }
-````
+```
 
+A `for` expression, `sort()`, `keys()`, `lower()` and `join()` turn a map into one string. `sort()` matters: map iteration order is lexical by key anyway, but sorting makes the intent explicit and survives refactoring to other collection types.
 
-Here, we use a combination of `for` expression, `upper()`, `title()`, and `join()` functions to transform a map of tags into a formatted string.
+## Provider-Defined Functions
 
-## Provider-Defined Functions (Azure)
+Terraform 1.8 lets providers ship functions. You call them with `provider::<local name>::<function>()`, where the local name is the key in `required_providers`. They need the provider in `required_providers`, but **no `provider` block and no credentials**: the function runs inside the provider plugin, without it being configured.
 
-Azure provider introduces two useful functions: `parse_resource_id` and `normalise_resource_id`.
+Some zero-cost providers with functions:
 
-### parse_resource_id
+| Provider | Functions |
+|----------|-----------|
+| `hashicorp/time` | `rfc3339_parse`, `duration_parse`, `unix_timestamp_parse` |
+| `hashicorp/local` | `direxists` |
+| `hashicorp/kubernetes` | `manifest_decode`, `manifest_decode_multi`, `manifest_encode` |
 
-This function parses an Azure resource ID and returns its components.
+### rfc3339_parse
 
-````hcl
-locals {
-  resource_id = "/subscriptions/12345678-1234-9876-4563-123456789012/resourceGroups/myRG/providers/Microsoft.Network/virtualNetworks/myVNet"
-  parsed_id = provider::azurerm::parse_resource_id(local.resource_id)
-}
+Parses a timestamp into its parts:
 
-output "resource_group" {
-  value = local.parsed_id.resource_group_name
-}
-
-output "resource_type" {
-  value = local.parsed_id.resource_type
-}
-
-output "resource_name" {
-  value = local.parsed_id.resource_name
-}
-````
-
-
-### normalise_resource_id
-
-This function normalizes an Azure resource ID, ensuring consistent formatting.
-
-````hcl
-locals {
-  messy_id = "/Subscriptions/12345678-1234-9876-4563-123456789012/resourceGroups/myRG/PROVIDERS/Microsoft.Network/virtualNetworks/myVNet"
-  clean_id = provider::azurerm::normalise_resource_id(local.messy_id)
+```hcl
+terraform {
+  required_providers {
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.13"
+    }
+  }
 }
 
-output "normalized_id" {
-  value = local.clean_id
+output "parsed" {
+  value = provider::time::rfc3339_parse("2026-09-15T00:00:00Z")
 }
-````
+# {
+#   day = 15, month = 9, month_name = "September", year = 2026,
+#   weekday_name = "Tuesday", iso_week = 38, unix = 1789430400, ...
+# }
+```
 
+### duration_parse
+
+Turns a Go-style duration into numbers:
+
+```hcl
+output "retention" {
+  value = provider::time::duration_parse("36h30m")
+}
+# { hours = 36.5, minutes = 2190, seconds = 131400, ... }
+```
 
 ## Combining Built-in and Provider-Defined Functions
 
-You can combine Terraform's built-in functions with provider-defined functions for powerful transformations.
+`regex()` pulls the date out of an Ubuntu image version, `format()` builds a timestamp, `rfc3339_parse()` understands it, and arithmetic does the rest:
 
-````hcl
+```hcl
 locals {
-  resource_ids = [
-    "/subscriptions/12345678-1234-9876-4563-123456789012/resourceGroups/myRG1/providers/Microsoft.Network/virtualNetworks/myVNet1",
-    "/subscriptions/12345678-1234-9876-4563-123456789012/resourceGroups/myRG2/providers/Microsoft.Network/virtualNetworks/myVNet2"
-  ]
-  
-  vnet_names = [for id in local.resource_ids : provider::azurerm::parse_resource_id(id).resource_name]
-  uppercase_names = [for name in local.vnet_names : upper(name)]
+  build_date  = regex("^(\\d{4})(\\d{2})(\\d{2})", "20260915.1") # ["2026", "09", "15"]
+  image_built = provider::time::rfc3339_parse(format("%s-%s-%sT00:00:00Z", local.build_date...))
+  now_unix    = provider::time::rfc3339_parse(plantimestamp()).unix
+  age_days    = floor((local.now_unix - local.image_built.unix) / 86400)
 }
+```
 
-output "vnet_names" {
-  value = local.uppercase_names
-}
-
-# Output: ["MYVNET1", "MYVNET2"]
-````
-
-
-This example combines the `parse_resource_id` provider-defined function with Terraform's built-in `upper()` function and list comprehension.
+The `...` after `local.build_date` expands the list into separate arguments.
 
 ## Best Practices
 
-1. Use function chaining to simplify complex transformations.
-2. Leverage provider-defined functions for provider-specific operations.
-3. Combine built-in and provider-defined functions for powerful data manipulation.
-4. Use descriptive names for locals to improve readability when chaining functions.
+1. Break long chains into named `locals`. `local.clean_name` is easier to debug than one 200-character expression, and you can inspect each step in `terraform console`.
+2. Use `plantimestamp()`, never `timestamp()`, in anything that ends up in a resource. `timestamp()` returns a new value every run, so the resource shows a change on every plan.
+3. Use `try()` and `lookup()` defaults to handle bad input deliberately, and validate what you can't handle (see [Section 1](../1-variable-conditions/README.md)).
+4. Test function logic with `terraform test`. It needs no infrastructure, and `override_resource` makes random values predictable.
 
-## Tasks
+## Task 1: VM Naming Convention
 
-
-## Task 1: Resource Naming Convention
-
-Create a function chain that generates a standardized name for Azure resources:
-- Start with a base name (e.g., "myapp")
-- Add the environment (e.g., "prod", "dev")
-- Add a random suffix
-- Ensure the final name is lowercase and uses hyphens instead of spaces
-- Limit the total length to 24 characters (for storage account compatibility)
+Create a naming chain for VMs:
+- Start with a base name (e.g., "My App")
+- Add the environment and a random suffix
+- Lowercase, with anything that isn't a letter, digit or hyphen replaced by a hyphen
+- At most 63 characters (the hostname limit), without a trailing hyphen
 
 ### Example
 ```hcl
-variable "base_name" {
-    type = string
-    default = "myapp"
-}
-variable "environment" {
-    type = string
-    default = "dev"
-}
 resource "random_string" "suffix" {
-    length = 6
-    special = false
-    upper = false
+  length  = 6
+  special = false
+  upper   = false
 }
+
 locals {
-    full_name = "${var.base_name}-${var.environment}-${random_string.suffix.result}"
-    standardized_name = lower(replace(substr(local.full_name, 0, 24), " ", "-"))
+  raw_name   = "${var.base_name}-${var.environment}-${random_string.suffix.result}"
+  clean_name = replace(lower(trimspace(local.raw_name)), "/[^a-z0-9-]+/", "-")
+  vm_name    = trimsuffix(substr(local.clean_name, 0, 63), "-")
 }
-output "resource_name" {
-    value = local.standardized_name
-}
+# "My App" + "dev" -> "my-app-dev-s78i0r"
 ```
 
-## Task 2: Tag Manipulation
-Given a map of tags, create a function chain that:
-- Converts all keys to uppercase
-- Prefixes all values with the key
-- Joins the resulting key-value pairs into a single string
-- Limits the total length to 512 characters (Azure's tag value limit)
+Order matters. Clean first, *then* truncate: otherwise the replacement can make the name longer again. And truncating can cut the name right after a hyphen, which `trimsuffix()` removes. When a string argument to `replace()` is wrapped in `/.../`, Terraform treats it as a regular expression.
 
-### Example
-```hcl 
-variable "tags" { 
-    type = map(string) 
-    default = { 
-        "environment" = "production" 
-        "project" = "myproject" 
-        "owner" = "devops team" 
-    }
-}
-locals { 
-    formatted_tags = [for k, v in var.tags : "${upper(k)}:${k}-${v}"] 
-    tag_string = substr(join(", ", local.formatted_tags), 0, 512)
-}
-output "tag_string" { 
-    value = local.tag_string
-}
-```
-## Task 3: Resource ID Parsing and Formatting
-Use the `parse_resource_id` provider-defined function to:
-- Extract the resource group, resource type, and resource name from a given Azure resource ID
-- Extract the resource group, resource type, and resource name from a given Azure resource ID
-- Format these components into a string: "NAME (TYPE) in RESOURCE_GROUP"
-- Convert the resource type to title case (e.g., "virtualNetworks" to "Virtual Networks")
+## Task 2: Labels to Description
 
-Example
-```hcl
-variable "resource_id" { 
-    type = string 
-    default = "/subscriptions/12345678-1234-9876-4563-123456789012/resourceGroups/myRG/providers/Microsoft.Network/virtualNetworks/myVNet"
-}
-locals { 
-    parsed_id = provider::azurerm::parse_resource_id(var.resource_id) 
-    resource_type_formatted = title(replace(local.parsed_id.resource_type, "/([A-Z])/", " $1")) 
-    formatted_string = "${local.parsed_id.resource_name} (${local.resource_type_formatted}) in ${local.parsed_id.resource_group_name}"
-}
-output "formatted_resource_info" { 
-    value = local.formatted_string
-}
-```
-## Task 4: Subnet CIDR Calculation
-Create a function chain that:
-- Starts with a VNet address space (e.g., "10.0.0.0/16")
-- Calculates 4 equal-sized subnet CIDRs within that space
-- Returns the list of subnet CIDRs
+libvirt has no tags, but a VM has a `description` that shows up in `virsh dominfo` and virt-manager. Turn a map of labels into one description string:
+- keys lowercased, as `key=value`
+- sorted, joined with `;`
+- at most 255 characters
 
 ### Example
 ```hcl
-variable "vnet_cidr" {  
-    type = string
-    default = "10.0.0.0/16"
-}
-locals { 
-    vnet_address = cidrsubnets(var.vnet_cidr, 2, 2, 2, 2)
-}
-output "subnet_cidrs" { 
-    value = local.vnet_address
+locals {
+  label_pairs = [for k in sort(keys(var.labels)) : "${lower(k)}=${var.labels[k]}"]
+  description = substr(join(";", local.label_pairs), 0, 255)
 }
 ```
 
-## Task 5: Resource ID Normalization and Validation
-Use both `parse_resource_id` and `normalise_resource_id` to:
-- Normalize a given (potentially messy) Azure resource ID
-- Validate that the normalized ID belongs to a specific resource type (e.g., only accept Storage Account IDs)
-- If valid, return the storage account name; if not, return an error message
+## Task 3: Base Image Age
+
+Warn when the Ubuntu base image is more than 90 days old. Parse the build date from the image version (`20260915` or `20260915.1`) with `provider::time::rfc3339_parse()`, and compare it with `plantimestamp()`.
 
 ### Example
 ```hcl
-variable "resource_id" { 
-    type = string 
-    default = "/subscriptions/12345678-1234-9876-4563-123456789012/resourceGroups/myRG/providers/Microsoft.Storage/storageAccounts/mystorageaccount"
+locals {
+  build_date = regex("^(\\d{4})(\\d{2})(\\d{2})", var.image_version)
+  image_built = provider::time::rfc3339_parse(
+    format("%s-%s-%sT00:00:00Z", local.build_date[0], local.build_date[1], local.build_date[2])
+  )
+  now_unix       = provider::time::rfc3339_parse(plantimestamp()).unix
+  image_age_days = floor((local.now_unix - local.image_built.unix) / 86400)
 }
-locals { 
-    normalized_id = provider::azurerm::normalise_resource_id(var.resource_id) 
-    parsed_id = provider::azurerm::parse_resource_id(local.normalized_id) 
-    is_storage_account = local.parsed_id.resource_type == "storageAccounts" 
-    storage_account_name = local.is_storage_account ? local.parsed_id.resource_name : "Error: Not a storage account ID"
-}
-output "result" { 
-    value = local.storage_account_name
+
+check "base_image_is_fresh" {
+  assert {
+    condition     = local.image_age_days <= var.max_image_age_days
+    error_message = "Base image ${var.image_version} is ${local.image_age_days} days old (limit ${var.max_image_age_days}). Rebuild it with Packer (PKR-100)."
+  }
 }
 ```
 
-## Task 6: Naming Function with Lookup and Error Handling
-Create a naming function that:
-- Takes inputs for service name, environment, and location
-- Uses a lookup table to convert location names to short codes (e.g., "East US" to "eus")
-- Generates a unique suffix based on the current date and a random number
-- Generates a unique suffix based on the current date and a random number
-- Assembles these components into a name that follows Azure naming rules for a specific resource type (e.g., App Service)
-- Handles errors gracefully (e.g., invalid inputs)
-Remember to use clear variable names and add comments to explain complex parts of your function chains.
+A `check` block warns but doesn't stop the run: an old image is worth knowing about, not worth blocking a deployment for. Try `terraform plan -var image_version=20200101`.
+
+## Task 4: Network per Tier
+
+Split a lab range (e.g. `10.140.0.0/22`) into one `/24` per tier and return a map from tier name to CIDR.
 
 ### Example
 ```hcl
-variable "service_name" { 
-    type = string
+locals {
+  tier_cidrs = zipmap(var.tiers, cidrsubnets(var.lab_cidr, [for t in var.tiers : 2]...))
 }
-variable "environment" { 
-    type = string
+# { app = "10.140.1.0/24", db = "10.140.2.0/24", web = "10.140.0.0/24" }
+```
+
+`cidrsubnets()` takes the number of *extra* bits for each subnet: a `/22` plus 2 bits is a `/24`. The list is built with a `for` expression and expanded with `...`, so it grows with `var.tiers`. Feed the result into the network module from [TF-201](../../../TF-200-modules/TF-201-module-design/README.md) with `for_each`.
+
+## Task 5: Durations
+
+Let users write snapshot retention as a readable duration (`72h`, `1h30m`) and work out how many snapshots to keep for a given interval. Reject durations Terraform can't parse.
+
+### Example
+```hcl
+variable "snapshot_retention" {
+  type    = string
+  default = "72h"
+
+  validation {
+    condition     = can(provider::time::duration_parse(var.snapshot_retention))
+    error_message = "snapshot_retention must be a duration like 72h or 1h30m (units: h, m, s)."
+  }
 }
-variable "location" { 
-    type = string
-}
-locals { 
-    location_codes = { "East US" = "eus" "West US" = "wus" "North Europe" = "neu" "West Europe" = "weu" } 
-    current_date = formatdate("YYMMDD", timestamp()) 
-    random_suffix = random_string.suffix.result 
-    name_components = [ lower(var.service_name), lower(var.environment), lookup(local.location_codes, var.location, "unk"), local.current_date, local.random_suffix ] 
-    app_service_name = join("-", slice(local.name_components, 0, min(length(local.name_components), floor((60 - length(join("", local.name_components))) / (length(local.name_components) - 1))) ))
-}
-resource "random_string" "suffix" { 
-    length = 4 
-    special = false 
-    upper = false
-}
-output "app_service_name" { 
-    value = local.app_service_name
+
+locals {
+  snapshot_retention_hours = provider::time::duration_parse(var.snapshot_retention).hours
+  snapshots_to_keep        = ceil(local.snapshot_retention_hours / var.snapshot_interval_hours)
 }
 ```
+
+Provider-defined functions work inside `validation` blocks too. Note the units: Go durations stop at hours, so "3 days" is `72h`.
+
+## Task 6: Name Builder with Lookup and Error Handling
+
+Build host names from a service name, environment and site:
+- Convert site names to short codes with a lookup table (`"Home lab"` → `hom`), and use `unk` for unknown sites
+- Use the service name only if it starts with a letter, otherwise fall back to `svc`
+- Add the random suffix from Task 1
+- Don't use the current date: `timestamp()` changes every run, so the name (and the VM) would change on every plan
+
+### Example
+```hcl
+locals {
+  site_codes = {
+    "Stockholm lab" = "sto"
+    "Home lab"      = "hom"
+    "Classroom"     = "cls"
+  }
+
+  site_code    = lookup(local.site_codes, var.site, "unk")
+  service_slug = try(regex("^[a-z][a-z0-9]*", lower(var.service_name)), "svc")
+
+  host_name = join("-", compact([
+    local.service_slug,
+    var.environment,
+    local.site_code,
+    random_string.suffix.result,
+  ]))
+}
+# "Grafana" in "Home lab"         -> "grafana-dev-hom-s78i0r"
+# "42-bad-name" in "Mars base"    -> "svc-dev-unk-s78i0r"
+```
+
+`regex()` errors when nothing matches; `try()` turns that error into the fallback. `compact()` drops empty strings, so an empty environment doesn't leave a double hyphen.
+
+Remember to use clear names for your locals and add comments to explain complex parts of your function chains.

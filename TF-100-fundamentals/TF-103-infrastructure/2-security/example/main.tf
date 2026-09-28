@@ -25,16 +25,40 @@ provider "libvirt" {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Network with explicit DHCP range (security: limit IP allocation)
-# Note: In libvirt 0.9.3, mode, addresses, dhcp, and dns blocks are not supported
-# Networks are automatically configured with NAT and DHCP
+# A small DHCP range caps how many guests can join; a fixed DHCP host entry
+# pins the hardened VM to a known address that firewall rules can reference.
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "libvirt_network" "secure" {
   name      = "${var.project_name}-secure-net"
   autostart = true
-  
-  # Note: In 0.9.3, cannot configure mode, addresses, dhcp, or dns
-  # Networks are automatically NAT-enabled with DHCP
+
+  forward = {
+    mode = "nat"
+  }
+
+  ips = [
+    {
+      address = cidrhost(var.network_cidr, 1)
+      prefix  = tonumber(split("/", var.network_cidr)[1])
+      dhcp = {
+        # Only 10 addresses available for dynamic leases
+        ranges = [
+          {
+            start = cidrhost(var.network_cidr, 100)
+            end   = cidrhost(var.network_cidr, 109)
+          }
+        ]
+        # Static lease for the hardened VM
+        hosts = [
+          {
+            name = "${var.project_name}-secure-vm"
+            ip   = cidrhost(var.network_cidr, 10)
+          }
+        ]
+      }
+    }
+  ]
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -98,7 +122,7 @@ resource "libvirt_cloudinit_disk" "secure" {
       - ufw allow ssh
       - ufw --force enable
   EOT
-  
+
   meta_data = yamlencode({
     instance-id    = "${var.project_name}-secure-vm"
     local-hostname = "${var.project_name}-secure-vm"

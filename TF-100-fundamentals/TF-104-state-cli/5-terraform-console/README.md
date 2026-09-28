@@ -25,6 +25,7 @@ By the end of this section, you will be able to:
 - ✅ Explore state values without running `terraform show`
 - ✅ Debug complex `for` expressions before using them in code
 - ✅ Test variable values and local expressions
+- ✅ Evaluate expressions inside a child module with `-scope` (1.16+)
 
 ---
 
@@ -411,6 +412,56 @@ tolist([
 
 ---
 
+## 🧩 Evaluating Inside a Child Module: `-scope` (Terraform 1.16+)
+
+By default the console evaluates expressions in the **root module**. A child module's variables and locals are invisible there — you can only see what the module exports as outputs.
+
+Terraform 1.16 adds the `-scope` flag to open the console **inside** a child module.
+
+Try it with the example from [Section 3: Modules Introduction](../3-modules-intro/README.md), which calls the same `vm` module twice:
+
+```bash
+cd ../3-modules-intro/example
+terraform init
+```
+
+```bash
+# Root scope: the module's inputs are not visible
+terraform console
+> var.vm_name
+╷
+│ Error: Reference to undeclared input variable
+```
+
+```bash
+# Scope the console to the web_vm module call
+terraform console -scope=module.web_vm
+> var.vm_name
+"tf104-modules-web"
+> var.memory_mb
+1024
+```
+
+```bash
+# Same module code, different instance — different values
+terraform console -scope=module.db_vm
+> var.vm_name
+"tf104-modules-db"
+> var.memory_mb
+2048
+```
+
+For modules with multiple instances, include the index or key:
+
+```bash
+terraform console -scope='module.vm[0]'          # module uses count
+terraform console -scope='module.vm["web"]'      # module uses for_each
+```
+
+> 💡 **When to use `-scope`**: debugging an expression inside a module ("why is this local wrong for the db instance?") without adding temporary outputs to the module.
+
+---
+
 ## 🔧 Conditional Expressions
 
 ```hcl
@@ -539,7 +590,20 @@ false
 
 ---
 
-**Question 3**: What does `cidrsubnet("10.0.0.0/16", 8, 2)` return?
+**Question 3**: Your root module calls `module "app" { for_each = ... }`. How do you evaluate `local.tags` inside the `"prod"` instance?
+- A) `terraform console` then `module.app["prod"].local.tags`
+- B) `terraform console -scope='module.app["prod"]'` then `local.tags`
+- C) `terraform console -module=app` then `local.tags["prod"]`
+- D) It isn't possible — locals are private to the module
+
+<details>
+<summary>Answer</summary>
+**B)** — Since Terraform 1.16, `-scope` makes the console evaluate inside a child module instance. Without it, only the module's outputs are reachable from the root.
+</details>
+
+---
+
+**Question 4**: What does `cidrsubnet("10.0.0.0/16", 8, 2)` return?
 - A) `"10.0.0.0/8"`
 - B) `"10.0.2.0/24"`
 - C) `"10.2.0.0/16"`
@@ -562,6 +626,7 @@ false
 | Multi-line input (1.9+) | Press Enter on blank line to evaluate |
 | Verify CIDR math | `cidrsubnet("10.0.0.0/16", 8, 1)` |
 | Explore state values | `local_file.hello.filename` |
+| Evaluate inside a module (1.16+) | `terraform console -scope=module.web_vm` |
 | Test conditionals | `5 > 3 ? "yes" : "no"` |
 
 ---

@@ -1,146 +1,97 @@
 # TF-204 Supplement: Identity-Based Import (Terraform 1.12+)
 #
-# This example demonstrates the SYNTAX of identity-based import blocks.
-# The local provider does not implement identity-based import, so the
-# identity blocks are shown as comments for reference.
+# Imports the resources seed/ created, using `identity` instead of `id`.
+# Needs Moto running (see the README).
 #
-# For a working import example, see the parent example/ directory which
-# uses traditional id-based import with the local provider.
-#
-# In production with a supporting provider (e.g., AWS provider 6.x+):
+#   (cd seed && terraform init && terraform apply && rm terraform.tfstate*)
 #   terraform init
-#   terraform plan   # Shows what will be imported
-#   terraform apply  # Performs the import
+#   terraform plan      # 5 to import, 0 to add, 0 to change, 0 to destroy
+#   terraform apply
 
-terraform {
-  required_version = ">= 1.14"
-  required_providers {
-    local = {
-      source  = "hashicorp/local"
-      version = "~> 2.7"
-    }
+locals {
+  assume_ec2 = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "ec2.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+# ── A bucket: identity = { bucket } ─────────────────────────────────────────
+
+import {
+  to = aws_s3_bucket.data
+  identity = {
+    bucket = "legacy-data-prod"
   }
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# TRADITIONAL IMPORT — using string id (Terraform 1.5+)
-# Works with all providers that support import
-# ─────────────────────────────────────────────────────────────────────────────
+resource "aws_s3_bucket" "data" {
+  bucket = "legacy-data-prod"
+}
 
-# Step 1: Create the file manually (simulates pre-existing infrastructure)
-# In a real scenario, this resource already exists and was NOT created by Terraform
+# ── Several roles at once: for_each + identity = { name } ───────────────────
 
-# Step 2: Import it using traditional string id
+variable "roles_to_import" {
+  type    = set(string)
+  default = ["legacy-deployer", "legacy-readonly"]
+}
+
 import {
-  to = local_file.existing_config
-  id = "${path.module}/output/existing.conf"  # local_file ID = absolute file path
+  for_each = var.roles_to_import
+  to       = aws_iam_role.roles[each.key]
+  identity = {
+    name = each.key
+  }
 }
 
-# Step 3: Define the resource configuration to match the existing resource
-resource "local_file" "existing_config" {
-  filename = "${path.module}/output/existing.conf"
-  content  = "# Existing configuration file\napp_name = legacy-app\n"
+resource "aws_iam_role" "roles" {
+  for_each = var.roles_to_import
+
+  name               = each.key
+  assume_role_policy = local.assume_ec2
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# IDENTITY-BASED IMPORT SYNTAX — for reference (Terraform 1.12+)
-# Uncomment and adapt when using a provider that supports identity
-# ─────────────────────────────────────────────────────────────────────────────
+# ── A policy: identity = { arn } ────────────────────────────────────────────
+# Moto's account ID is always 123456789012
 
-# Example 1: AWS IAM Role (requires AWS provider 6.x+ with identity support)
-#
-# import {
-#   to = aws_iam_role.admin
-#   identity = {
-#     name = "my-admin-role"   # Named attribute — no need to know string ID format
-#   }
-# }
-#
-# resource "aws_iam_role" "admin" {
-#   name = "my-admin-role"
-#   assume_role_policy = jsonencode({
-#     Version = "2012-10-17"
-#     Statement = [{
-#       Action    = "sts:AssumeRole"
-#       Effect    = "Allow"
-#       Principal = { Service = "ec2.amazonaws.com" }
-#     }]
-#   })
-# }
+locals {
+  read_logs_arn = "arn:aws:iam::123456789012:policy/legacy-read-logs"
+}
 
-# Example 2: AWS S3 Bucket
-#
-# import {
-#   to = aws_s3_bucket.data
-#   identity = {
-#     bucket = "my-data-bucket-prod"   # Explicit attribute name
-#   }
-# }
-#
-# resource "aws_s3_bucket" "data" {
-#   bucket = "my-data-bucket-prod"
-# }
+import {
+  to = aws_iam_policy.read_logs
+  identity = {
+    arn = local.read_logs_arn
+  }
+}
 
-# Example 3: Composite resource — where identity really shines
-# Traditional id uses a separator: "my-bucket,private"
-# Identity uses named attributes — much clearer!
-#
-# import {
-#   to = aws_s3_bucket_acl.main
-#   identity = {
-#     bucket = "my-bucket"
-#     acl    = "private"
-#   }
-# }
-#
-# resource "aws_s3_bucket_acl" "main" {
-#   bucket = "my-bucket"
-#   acl    = "private"
-# }
+resource "aws_iam_policy" "read_logs" {
+  name = "legacy-read-logs"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["logs:GetLogEvents", "logs:DescribeLogStreams"]
+      Resource = "*"
+    }]
+  })
+}
 
-# Example 4: Bulk import with for_each + identity
-#
-# locals {
-#   roles = {
-#     admin    = { name = "my-admin-role" }
-#     deployer = { name = "my-deployer-role" }
-#     readonly = { name = "my-readonly-role" }
-#   }
-# }
-#
-# import {
-#   for_each = local.roles
-#   to       = aws_iam_role.roles[each.key]
-#   identity = {
-#     name = each.value.name
-#   }
-# }
-#
-# resource "aws_iam_role" "roles" {
-#   for_each = local.roles
-#   name     = each.value.name
-#   # ... assume_role_policy etc.
-# }
+# ── A composite identity: role + policy_arn ─────────────────────────────────
+# With `id` you'd need to know the format: "<role>/<policy_arn>"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# COMPARISON: id vs identity — side by side
-# ─────────────────────────────────────────────────────────────────────────────
+import {
+  to = aws_iam_role_policy_attachment.read_logs
+  identity = {
+    role       = "legacy-readonly"
+    policy_arn = local.read_logs_arn
+  }
+}
 
-# The key difference:
-#
-# BEFORE (id — string, must know exact format):
-#   import {
-#     to = aws_s3_bucket_acl.main
-#     id = "my-bucket,private"   # What separator? What order? Must check docs!
-#   }
-#
-# AFTER (identity — structured, self-documenting):
-#   import {
-#     to = aws_s3_bucket_acl.main
-#     identity = {
-#       bucket = "my-bucket"     # Clear: this is the bucket name
-#       acl    = "private"       # Clear: this is the ACL value
-#     }
-#   }
-#
-# RULE: id and identity are MUTUALLY EXCLUSIVE — use one or the other.
+resource "aws_iam_role_policy_attachment" "read_logs" {
+  role       = aws_iam_role.roles["legacy-readonly"].name
+  policy_arn = aws_iam_policy.read_logs.arn
+}

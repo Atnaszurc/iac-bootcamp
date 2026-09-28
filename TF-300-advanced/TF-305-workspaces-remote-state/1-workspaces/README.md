@@ -33,12 +33,12 @@ By default, every Terraform configuration uses the **`default`** workspace. You 
 ### Workspace CLI Commands
 
 ```bash
-# List all workspaces (* = current)
+# List all workspaces (alphabetical, * = current)
 terraform workspace list
 # * default
 #   dev
-#   staging
 #   prod
+#   staging
 
 # Create a new workspace
 terraform workspace new dev
@@ -53,6 +53,37 @@ terraform workspace show
 # Delete a workspace (must not be current, must be empty)
 terraform workspace delete dev
 ```
+
+### Machine-Readable Workspace List (Terraform 1.16+)
+
+Scripts and CI pipelines used to parse the `*` marker out of `terraform workspace list`. Terraform 1.16 adds `-json`:
+
+```bash
+terraform workspace list -json
+```
+
+```json
+{
+  "format_version": "1.0",
+  "workspaces": [
+    { "name": "default" },
+    { "name": "dev" },
+    { "name": "staging", "is_current": true }
+  ],
+  "diagnostics": []
+}
+```
+
+```bash
+# All workspace names
+terraform workspace list -json | jq -r '.workspaces[].name'
+
+# Fail a pipeline step if a workspace is missing
+terraform workspace list -json | jq -e '.workspaces[] | select(.name == "prod")' > /dev/null \
+  || { echo "prod workspace missing"; exit 1; }
+```
+
+> 📝 `is_current` appears only on the current workspace. The official docs example shows `"is_current": false` on the others, but Terraform 1.16 leaves the key out — test for `.is_current == true`, not for `false`.
 
 ### State File Location per Workspace
 
@@ -240,9 +271,13 @@ cat staging.conf
 
 # List all workspaces
 terraform workspace list
-# * staging
 #   default
 #   dev
+# * staging
+
+# Same list for scripts (1.16+)
+terraform workspace list -json | jq -r '.workspaces[] | select(.is_current == true) | .name'
+# staging
 
 # Each workspace has its own state
 ls terraform.tfstate.d/

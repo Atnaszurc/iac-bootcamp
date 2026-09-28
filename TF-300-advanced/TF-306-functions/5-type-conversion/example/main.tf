@@ -10,15 +10,15 @@ locals {
   # String to number
   port_string = "8080"
   port_number = convert(local.port_string, number)
-  
+
   # Number to string
   count_number = 5
   count_string = convert(local.count_number, string)
-  
+
   # String to bool
   enabled_string = "true"
   enabled_bool   = convert(local.enabled_string, bool)
-  
+
   # List to set (removes duplicates)
   tags_list = ["web", "api", "web", "frontend"]
   tags_set  = convert(local.tags_list, set(string))
@@ -37,7 +37,7 @@ locals {
     replicas = "3"
     timeout  = "30"
   }
-  
+
   # Convert to properly typed object
   typed_config = convert(local.raw_config, object({
     app_name = string
@@ -46,7 +46,7 @@ locals {
     replicas = number
     timeout  = number
   }))
-  
+
   # Now we can do math with numbers
   total_capacity = local.typed_config.replicas * 100
   port_range     = "${local.typed_config.port}-${local.typed_config.port + 10}"
@@ -60,7 +60,7 @@ locals {
   # Convert list of string numbers to list of actual numbers
   string_ports = ["80", "443", "8080", "8443"]
   number_ports = convert(local.string_ports, list(number))
-  
+
   # Convert map with string values to map with number values
   string_limits = {
     cpu_cores = "4"
@@ -68,7 +68,7 @@ locals {
     disk_gb   = "100"
   }
   number_limits = convert(local.string_limits, map(number))
-  
+
   # Calculate totals (only works because they're numbers now)
   total_memory = local.number_limits.memory_gb * local.typed_config.replicas
   total_disk   = local.number_limits.disk_gb * local.typed_config.replicas
@@ -82,28 +82,28 @@ locals {
   # Simulate multi-environment configuration (all strings)
   raw_environments = {
     dev = {
-      instance_count = "2"
-      instance_size  = "small"
-      ports          = ["8080", "8443"]
-      enable_backup  = "false"
+      instance_count   = "2"
+      instance_size    = "small"
+      ports            = ["8080", "8443"]
+      enable_backup    = "false"
       backup_retention = "7"
     }
     staging = {
-      instance_count = "3"
-      instance_size  = "medium"
-      ports          = ["80", "443"]
-      enable_backup  = "true"
+      instance_count   = "3"
+      instance_size    = "medium"
+      ports            = ["80", "443"]
+      enable_backup    = "true"
       backup_retention = "14"
     }
     prod = {
-      instance_count = "5"
-      instance_size  = "large"
-      ports          = ["80", "443", "8080"]
-      enable_backup  = "true"
+      instance_count   = "5"
+      instance_size    = "large"
+      ports            = ["80", "443", "8080"]
+      enable_backup    = "true"
       backup_retention = "30"
     }
   }
-  
+
   # Convert to typed structure
   typed_environments = convert(local.raw_environments, map(object({
     instance_count   = number
@@ -112,7 +112,7 @@ locals {
     enable_backup    = bool
     backup_retention = number
   })))
-  
+
   # Now we can safely use these values
   prod_total_instances = local.typed_environments.prod.instance_count
   prod_primary_port    = local.typed_environments.prod.ports[0]
@@ -125,16 +125,16 @@ locals {
 locals {
   # Simulate API response (typically all strings)
   api_response = {
-    server_id     = "srv-abc123"
-    server_name   = "web-server-01"
-    cpu_count     = "4"
-    memory_gb     = "8"
-    disk_gb       = "100"
-    is_running    = "true"
-    uptime_hours  = "720"
-    tags          = ["production", "web", "frontend", "web"]  # duplicates
+    server_id    = "srv-abc123"
+    server_name  = "web-server-01"
+    cpu_count    = "4"
+    memory_gb    = "8"
+    disk_gb      = "100"
+    is_running   = "true"
+    uptime_hours = "720"
+    tags         = ["production", "web", "frontend", "web"] # duplicates
   }
-  
+
   # Convert to proper types
   server_info = convert(local.api_response, object({
     server_id    = string
@@ -144,14 +144,14 @@ locals {
     disk_gb      = number
     is_running   = bool
     uptime_hours = number
-    tags         = set(string)  # set removes duplicates
+    tags         = set(string) # set removes duplicates
   }))
-  
+
   # Calculate derived values (type-safe)
-  uptime_days        = local.server_info.uptime_hours / 24
-  total_storage_mb   = local.server_info.disk_gb * 1024
-  memory_per_cpu     = local.server_info.memory_gb / local.server_info.cpu_count
-  is_production      = contains(local.server_info.tags, "production")
+  uptime_days      = local.server_info.uptime_hours / 24
+  total_storage_mb = local.server_info.disk_gb * 1024
+  memory_per_cpu   = local.server_info.memory_gb / local.server_info.cpu_count
+  is_production    = contains(local.server_info.tags, "production")
 }
 
 # ============================================================================
@@ -162,22 +162,22 @@ locals {
   # Simulate YAML/JSON config loaded from file (all strings)
   yaml_config = {
     application = {
-      name         = "myapp"
-      version      = "1.2.3"
-      port         = "8080"
-      workers      = "4"
-      debug        = "false"
-      timeout_sec  = "30"
+      name        = "myapp"
+      version     = "1.2.3"
+      port        = "8080"
+      workers     = "4"
+      debug       = "false"
+      timeout_sec = "30"
     }
     database = {
-      host         = "db.example.com"
-      port         = "5432"
-      name         = "myapp_db"
-      pool_size    = "10"
-      ssl_enabled  = "true"
+      host        = "db.example.com"
+      port        = "5432"
+      name        = "myapp_db"
+      pool_size   = "10"
+      ssl_enabled = "true"
     }
   }
-  
+
   # Convert to typed structure
   app_config = convert(local.yaml_config, object({
     application = object({
@@ -196,7 +196,7 @@ locals {
       ssl_enabled = bool
     })
   }))
-  
+
   # Use with type safety
   connection_string = "${local.app_config.database.host}:${local.app_config.database.port}/${local.app_config.database.name}"
   total_workers     = local.app_config.application.workers * local.typed_config.replicas
@@ -212,23 +212,23 @@ locals {
     username = "john_doe"
     age      = "30"
     active   = "true"
-    roles    = ["admin", "user", "admin"]  # duplicates
+    roles    = ["admin", "user", "admin"] # duplicates
     metadata = {
       department = "engineering"
       level      = "senior"
     }
   }
-  
+
   # Convert and validate structure
   # This will fail at plan time if structure doesn't match
   validated_user = convert(local.user_input, object({
     username = string
     age      = number
     active   = bool
-    roles    = set(string)  # removes duplicates
+    roles    = set(string) # removes duplicates
     metadata = map(string)
   }))
-  
+
   # Safe to use
   is_admin = contains(local.validated_user.roles, "admin")
   is_adult = local.validated_user.age >= 18
@@ -239,7 +239,7 @@ locals {
 # ============================================================================
 
 resource "local_file" "basic_conversions" {
-  content = <<-EOT
+  content  = <<-EOT
     BASIC TYPE CONVERSIONS
     =====================
     
@@ -263,7 +263,7 @@ resource "local_file" "basic_conversions" {
 }
 
 resource "local_file" "object_conversions" {
-  content = <<-EOT
+  content  = <<-EOT
     OBJECT TYPE CONVERSIONS
     ======================
     
@@ -281,7 +281,7 @@ resource "local_file" "object_conversions" {
 }
 
 resource "local_file" "complex_structures" {
-  content = <<-EOT
+  content  = <<-EOT
     COMPLEX NESTED STRUCTURES
     ========================
     
@@ -298,7 +298,7 @@ resource "local_file" "complex_structures" {
 }
 
 resource "local_file" "api_response" {
-  content = <<-EOT
+  content  = <<-EOT
     API RESPONSE PARSING
     ===================
     
@@ -321,7 +321,7 @@ resource "local_file" "api_response" {
 }
 
 resource "local_file" "config_file" {
-  content = <<-EOT
+  content  = <<-EOT
     CONFIGURATION FILE PROCESSING
     ============================
     
@@ -344,7 +344,7 @@ resource "local_file" "config_file" {
 }
 
 resource "local_file" "validation" {
-  content = <<-EOT
+  content  = <<-EOT
     USER INPUT VALIDATION
     ====================
     
@@ -365,7 +365,7 @@ resource "local_file" "validation" {
 
 # Summary output
 resource "local_file" "summary" {
-  content = <<-EOT
+  content  = <<-EOT
     CONVERT() FUNCTION DEMONSTRATION
     ================================
     

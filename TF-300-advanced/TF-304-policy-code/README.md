@@ -2,9 +2,9 @@
 
 **Course**: TF-300 Advanced Terraform  
 **Module**: TF-304  
-**Duration**: 1 hour  
+**Duration**: 1.5 hours  
 **Prerequisites**: TF-303 (Terraform Test Framework)  
-**Tools**: Open Policy Agent (OPA), Rego language
+**Tools**: [Open Policy Agent](https://www.openpolicyagent.org/) 1.x (tested with 1.21.0), optionally [Regal](https://www.openpolicyagent.org/projects/regal) (the Rego linter). Terraform and libvirt only if you want to make your own plans.
 
 ---
 
@@ -12,1239 +12,955 @@
 
 1. [Course Overview](#course-overview)
 2. [Learning Objectives](#learning-objectives)
-3. [Introduction to Policy as Code](#introduction-to-policy-as-code)
-4. [Why Policy as Code?](#why-policy-as-code)
-5. [Open Policy Agent (OPA) Overview](#open-policy-agent-opa-overview)
-6. [Rego Language Basics](#rego-language-basics)
-7. [OPA with Terraform](#opa-with-terraform)
-8. [Writing Your First Policy](#writing-your-first-policy)
-9. [Policy Structure and Organization](#policy-structure-and-organization)
-10. [Common Policy Patterns](#common-policy-patterns)
-11. [Testing Policies](#testing-policies)
-12. [Policy Enforcement Levels](#policy-enforcement-levels)
-13. [Sentinel Overview (Enterprise)](#sentinel-overview-enterprise)
-14. [Best Practices](#best-practices)
-15. [Hands-On Labs](#hands-on-labs)
-16. [Checkpoint Quiz](#checkpoint-quiz)
-17. [Additional Resources](#additional-resources)
+3. [Policy vs Validation](#policy-vs-validation)
+4. [Where Policies Run](#where-policies-run)
+5. [Installing OPA](#installing-opa)
+6. [Rego in OPA 1.x](#rego-in-opa-1x)
+7. [The Terraform Plan as Input](#the-terraform-plan-as-input)
+8. [The Example Policies](#the-example-policies)
+9. [Testing Policies](#testing-policies)
+10. [Linting with Regal](#linting-with-regal)
+11. [Enforcement: deny, warn and CI](#enforcement-deny-warn-and-ci)
+12. [HCP Terraform: OPA, Sentinel and Terraform Policy](#hcp-terraform-opa-sentinel-and-terraform-policy)
+13. [Best Practices](#best-practices)
+14. [Hands-On Labs](#hands-on-labs)
+15. [Checkpoint Quiz](#checkpoint-quiz)
+16. [Additional Resources](#additional-resources)
 
 ---
 
 ## Course Overview
 
-Policy as Code allows you to define, version, and enforce organizational standards and compliance requirements as code. This course covers Open Policy Agent (OPA) with Rego for policy enforcement in Terraform, with an overview of HashiCorp Sentinel for enterprise users.
+Policy as Code means writing your organisation's rules ("production VMs need at least 2 vCPUs", "no open networks", "every VM has an owner") as code that checks every Terraform plan automatically, before anything is applied.
+
+This module uses **Open Policy Agent (OPA)** and its language, **Rego**. OPA is open source and free, and it doesn't need any cloud account: it reads the JSON version of a Terraform plan and tells you what's wrong with it.
 
 ### What You'll Build
 
-- OPA policies for Libvirt infrastructure
-- Resource naming conventions
-- Security policies (network, storage)
-- Compliance checks
-- Policy test suites
+Everything is in [`example/`](./example/):
 
-### Why This Matters
-
-- **Compliance**: Enforce regulatory requirements
-- **Security**: Prevent misconfigurations
-- **Governance**: Maintain organizational standards
-- **Automation**: Shift-left security and compliance
-- **Consistency**: Ensure uniform infrastructure
+- A small libvirt configuration (a network, three VMs and their disks), and a **real** `plan.json` made from it
+- Three policy packages: naming and ownership, resource limits, networks
+- A shared helper package that works both locally and in HCP Terraform
+- 36 policy tests with 100% coverage, and a clean Regal lint
 
 ---
 
 ## Learning Objectives
 
-By the end of this course, you will be able to:
+By the end of this module, you will be able to:
 
-1. ✅ Understand Policy as Code concepts
-2. ✅ Write OPA policies in Rego language
-3. ✅ Integrate OPA with Terraform workflows
-4. ✅ Test policies with OPA test framework
-5. ✅ Implement common policy patterns
-6. ✅ Understand policy enforcement levels
-7. ✅ Compare OPA and Sentinel approaches
-8. ✅ Apply best practices for policy development
+1. ✅ Explain what policy adds on top of variable validation and conditions
+2. ✅ Write Rego in the OPA 1.x syntax (`if`, `contains`, `some ... in`, `every`)
+3. ✅ Read a Terraform plan's JSON and find what a policy should check
+4. ✅ Evaluate policies against a plan, locally and in CI
+5. ✅ Test policies with `opa test`, and lint them with Regal
+6. ✅ Avoid the classic policy bug: a rule that silently passes on an undefined value
+7. ✅ Compare OPA, Sentinel and Terraform policy in HCP Terraform
 
 ---
 
-## Introduction to Policy as Code
+## Policy vs Validation
 
-### What is Policy as Code?
+TF-301 and TF-302 put rules *inside* the configuration: variable validation, preconditions, postconditions, checks. Policies live *outside* it.
 
-Policy as Code is the practice of defining organizational policies, compliance rules, and security standards as executable code that can be:
-
-- **Versioned**: Track changes in Git
-- **Tested**: Automated testing like application code
-- **Reviewed**: Code review processes
-- **Automated**: Integrated into CI/CD pipelines
-- **Enforced**: Automatically applied to infrastructure
-
-### The Policy Enforcement Pyramid
-
-```
-        /\
-       /  \      Advisory (Warnings)
-      /____\     - Inform users
-     /      \    - No blocking
-    /________\   Soft Mandatory (Can Override)
-   /          \  - Require justification
-  /____________\ Hard Mandatory (Blocking)
-                 - Cannot proceed
-```
-
-### Policy vs Validation
-
-| Aspect | Validation (TF-301/302) | Policy (TF-304) |
+| Aspect | Validation and conditions (TF-301/302) | Policy (TF-304) |
 |--------|-------------------------|-----------------|
-| **Scope** | Input correctness | Organizational rules |
-| **Location** | Terraform code | External policy engine |
-| **Flexibility** | Per-module | Centralized |
-| **Enforcement** | Always on | Configurable levels |
-| **Audience** | Developers | Compliance/Security teams |
+| **Written by** | The module author | Often a platform, security or compliance team |
+| **Lives in** | The Terraform configuration | A separate policy repository |
+| **Checks** | One module's inputs and results | The whole plan, across every module and team |
+| **Can be skipped by** | Editing the module | Only whoever runs the pipeline or owns the policy set |
+| **Sees** | Values in the module | Everything in the plan: every resource, the actions (create, delete, replace), before and after values |
+
+They complement each other. A module validates what it can know about itself ("memory must be a positive number"). A policy enforces what the organisation decides ("production VMs need 2 GiB"), whatever module the VM comes from.
 
 ---
 
-## Why Policy as Code?
+## Where Policies Run
 
-### Traditional Approach Problems
+| Where | Framework | How it's enforced |
+|---|---|---|
+| Your machine, CI pipeline | **OPA** (`opa eval`, `opa test`) | Your pipeline fails the build when `deny` isn't empty. This module. |
+| HCP Terraform / Terraform Enterprise | **OPA** policy sets | Advisory or mandatory, per policy |
+| HCP Terraform / Terraform Enterprise | **Sentinel** | Advisory, soft mandatory or hard mandatory |
+| HCP Terraform | **Terraform policy** (beta) | HCL-based; the only framework that also works with Stacks |
 
-❌ **Manual Reviews**: Slow, inconsistent, error-prone  
-❌ **Documentation**: Outdated, ignored  
-❌ **Tribal Knowledge**: Not scalable  
-❌ **Post-Deployment**: Expensive to fix  
-❌ **Audit Trails**: Hard to track compliance
-
-### Policy as Code Benefits
-
-✅ **Automated Enforcement**: Consistent application  
-✅ **Shift-Left**: Catch issues early  
-✅ **Version Control**: Track policy changes  
-✅ **Testable**: Verify policy correctness  
-✅ **Scalable**: Apply across organization  
-✅ **Auditable**: Clear compliance trail
-
-### Use Cases
-
-1. **Security**: Prevent insecure configurations
-2. **Compliance**: Enforce regulatory requirements (GDPR, HIPAA, SOC2)
-3. **Cost Control**: Limit expensive resources
-4. **Naming Standards**: Enforce conventions
-5. **Tagging**: Ensure proper resource tagging
-6. **Network Security**: Validate firewall rules
+The policies you write here run in HCP Terraform too, with one difference covered in [HCP Terraform](#hcp-terraform-opa-sentinel-and-terraform-policy). HCP Terraform itself is the subject of the TF-400 series.
 
 ---
 
-## Open Policy Agent (OPA) Overview
+## Installing OPA
 
-### What is OPA?
+OPA is a single binary.
 
-**Open Policy Agent** is an open-source, general-purpose policy engine that:
-
-- Uses **Rego** language for policy definition
-- Works with **JSON/YAML** data
-- Provides **REST API** for policy evaluation
-- Supports **multiple integrations** (Kubernetes, Terraform, etc.)
-- Offers **built-in testing** framework
-
-### OPA Architecture
-
-```
-┌─────────────────┐
-│  Terraform Plan │
-│   (JSON data)   │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│   OPA Engine    │
-│  ┌───────────┐  │
-│  │   Rego    │  │
-│  │ Policies  │  │
-│  └───────────┘  │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Policy Decision │
-│  (Allow/Deny)   │
-└─────────────────┘
-```
-
-### Installing OPA
-
-**Linux/macOS**:
+**Linux**:
 ```bash
-curl -L -o opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64
+curl -L -o opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64_static
 chmod +x opa
 sudo mv opa /usr/local/bin/
 ```
 
-**Windows (PowerShell)**:
+**macOS**:
+```bash
+brew install opa
+```
+
+**Windows (PowerShell)**: download `opa_windows_amd64.exe`, rename it to `opa.exe`, and put it in a folder on your `PATH`:
 ```powershell
 Invoke-WebRequest -Uri https://openpolicyagent.org/downloads/latest/opa_windows_amd64.exe -OutFile opa.exe
-Move-Item opa.exe C:\Windows\System32\
 ```
 
-**Verify Installation**:
+**Verify**:
 ```bash
 opa version
+# Version: 1.21.0
 ```
+
+You need **OPA 1.0 or later**. Everything in this module uses the 1.x syntax, which OPA 0.x doesn't accept by default.
+
+**Regal** (optional, recommended) is installed the same way, from its [GitHub releases](https://github.com/open-policy-agent/regal/releases) or with `brew install regal`.
 
 ---
 
-## Rego Language Basics
+## Rego in OPA 1.x
 
-### Rego Fundamentals
+Rego is a declarative language: you describe what must be true about the input, and OPA works out the answer. It is built for JSON, which is exactly what a Terraform plan is.
 
-Rego is a declarative language designed for policy definition:
+### The 1.x syntax
 
-- **Declarative**: Describe what should be true
-- **Logic-based**: Similar to Prolog/Datalog
-- **JSON-native**: Works naturally with JSON data
-- **Composable**: Build complex policies from simple rules
-
-### Basic Syntax
+OPA 1.0 (December 2024) made the modern syntax mandatory. Most Rego you'll find online, and older versions of this course, use the old one:
 
 ```rego
-# Package declaration (namespace)
-package terraform.libvirt
+# OPA 1.x rejects this (v0 syntax)
+package terraform.libvirt.old
 
-# Import statements
-import future.keywords.if
-import future.keywords.contains
-
-# Simple rule
-allow if {
-    input.resource_type == "libvirt_network"
-}
-
-# Rule with conditions
 deny[msg] {
-    resource := input.resources[_]
-    resource.type == "libvirt_domain"
-    resource.values.memory < 512
-    msg := sprintf("VM %s has insufficient memory: %d MB", [resource.name, resource.values.memory])
+	resource := input.resource_changes[_]
+	resource.type == "libvirt_domain"
+	msg := sprintf("%s", [resource.address])
 }
 ```
 
-### Rego Data Types
+```
+$ opa check old.rego
+2 errors occurred during loading:
+old.rego:3: rego_parse_error: `if` keyword is required before rule body
+old.rego:3: rego_parse_error: `contains` keyword is required for partial set rules
+```
+
+The same rule in the 1.x syntax:
 
 ```rego
-# Strings
-name := "my-network"
+package terraform.libvirt.old
 
-# Numbers
-memory := 2048
+deny contains msg if {
+	some resource in input.resource_changes
+	resource.type == "libvirt_domain"
+	msg := sprintf("%s", [resource.address])
+}
+```
 
-# Booleans
-autostart := true
+What changed:
 
-# Arrays
-allowed_sizes := [512, 1024, 2048, 4096]
+| v0 | 1.x | Meaning |
+|---|---|---|
+| `deny[msg] { ... }` | `deny contains msg if { ... }` | A rule that builds a **set** |
+| `allow { ... }` | `allow if { ... }` | Every rule body needs `if` |
+| `import future.keywords.if` | (nothing) | The keywords are built in |
+| `import rego.v1` | (nothing) | Only needed for code that must run on OPA 0.x *and* 1.x |
+| `x := input.list[_]` | `some x in input.list` | Iteration; the old form still works, the new one is clearer |
 
-# Objects
-vm_config := {
-    "name": "test-vm",
-    "memory": 2048,
-    "vcpu": 2
+To migrate old policies, `opa fmt --v0-v1 old.rego` rewrites them. To run old policies unchanged, `opa eval --v0-compatible ...`. See [Upgrading to v1.0](https://www.openpolicyagent.org/docs/v0-upgrade).
+
+### The basics
+
+```rego
+package example
+
+# A constant
+max_vcpu := 8
+
+# A boolean rule: true when every line of the body is true
+is_prod if input.environment == "prod"
+
+# Without a default, a rule whose body fails is *undefined*, not false.
+# default gives it a value in that case.
+default allow := false
+
+allow if {
+	input.vcpu <= max_vcpu
+	input.memory_mib >= 512
 }
 
-# Sets
-unique_names := {"vm1", "vm2", "vm3"}
+# A set rule: one element for every way the body succeeds
+too_big contains name if {
+	some vm in input.vms
+	vm.vcpu > max_vcpu
+	name := vm.name
+}
+
+# FOR ALL
+all_small if {
+	every vm in input.vms {
+		vm.vcpu <= max_vcpu
+	}
+}
+
+# A function
+mib(gib) := gib * 1024
+
+# Membership in a set
+allowed_modes := {"nat", "route"}
+
+mode_ok if input.mode in allowed_modes
 ```
 
-### Rego Operators
+Try any of this in the [Rego Playground](https://play.openpolicyagent.org/), or with `opa eval`:
+
+```bash
+echo '{"vms": [{"name": "a", "vcpu": 2}, {"name": "b", "vcpu": 12}]}' > input.json
+opa eval -d example.rego -i input.json 'data.example.too_big'
+```
+
+### Undefined: the most important idea in Rego
+
+If a value doesn't exist, Rego doesn't raise an error. The expression is **undefined**, the rule body fails, and the rule doesn't fire.
+
+That's convenient, and it is also the most common policy bug:
 
 ```rego
-# Comparison
-x == y    # Equal
-x != y    # Not equal
-x < y     # Less than
-x <= y    # Less than or equal
-x > y     # Greater than
-x >= y    # Greater than or equal
+package example
 
-# Logical
-x; y      # OR
-x, y      # AND
-not x     # NOT
+# A network without a forward block has no input.forward.mode at all.
+# The comparison is undefined, so this rule never fires for it:
+# a silent pass.
+deny contains "isolated networks are not allowed" if {
+	input.forward.mode == "none"
+}
 
-# Membership
-x in array        # Element in array
-x in object       # Key in object
+# Say what a missing value means, with object.get and a default...
+forward_mode := object.get(input, ["forward", "mode"], "isolated")
+
+deny contains "isolated networks are not allowed" if {
+	forward_mode == "isolated"
+}
+
+# ...or test for it with `not`: `not input.description` is true when
+# input.description is undefined (or false)
+deny contains "every VM needs a description" if {
+	not input.description
+}
 ```
 
-### Rego Built-in Functions
+Careful with `not` around a **function call**: in `not contains(input.description, "owner=")`, OPA evaluates `input.description` first. If it's undefined, the whole line is undefined, and the rule doesn't fire. [Quiz question 3](#question-3-undefined) is about exactly that.
 
-```rego
-# String functions
-startswith(string, prefix)
-endswith(string, suffix)
-contains(string, substring)
-sprintf(format, args)
-
-# Array functions
-count(array)
-sum(array)
-max(array)
-min(array)
-
-# Set operations
-intersection(set1, set2)
-union(set1, set2)
-
-# Type checking
-is_string(x)
-is_number(x)
-is_boolean(x)
-is_array(x)
-is_object(x)
-```
+When you write a policy, always ask: *what happens if this attribute is missing, null, or in a unit I didn't expect?* The example's resource-limits policy has a whole rule just for that.
 
 ---
 
-## OPA with Terraform
+## The Terraform Plan as Input
 
-### Workflow Integration
+OPA reads JSON, so you convert the plan:
 
-```
-1. terraform plan -out=tfplan.binary
-2. terraform show -json tfplan.binary > tfplan.json
-3. opa eval --data policy.rego --input tfplan.json "data.terraform.deny"
-4. If no violations: terraform apply tfplan.binary
+```bash
+terraform plan -out=tfplan
+terraform show -json tfplan > plan.json
 ```
 
-### Terraform Plan JSON Structure
+The part policies use most is `resource_changes`: one entry for every resource Terraform will touch. This is one entry from [`example/plan.json`](./example/plan.json), trimmed:
 
 ```json
 {
-  "format_version": "1.0",
-  "terraform_version": "1.9.0",
-  "planned_values": {
-    "root_module": {
-      "resources": [
-        {
-          "address": "libvirt_network.main",
-          "mode": "managed",
-          "type": "libvirt_network",
-          "name": "main",
-          "values": {
-            "name": "test-network",
-            "mode": "nat",
-            "addresses": ["192.168.100.0/24"]
-          }
-        }
-      ]
+  "address": "libvirt_domain.vm[\"web\"]",
+  "mode": "managed",
+  "type": "libvirt_domain",
+  "name": "vm",
+  "index": "web",
+  "change": {
+    "actions": ["create"],
+    "before": null,
+    "after": {
+      "name": "prod-web",
+      "memory": 1,
+      "memory_unit": "GiB",
+      "vcpu": 1,
+      "description": "owner=data-team environment=prod",
+      "running": null,
+      "uuid": null
+    },
+    "after_unknown": {
+      "uuid": true,
+      "id": true
     }
-  },
-  "resource_changes": [
-    {
-      "address": "libvirt_network.main",
-      "mode": "managed",
-      "type": "libvirt_network",
-      "change": {
-        "actions": ["create"],
-        "after": {
-          "name": "test-network",
-          "mode": "nat"
-        }
-      }
-    }
-  ]
+  }
 }
 ```
+
+What to know:
+
+- **`change.actions`** is a list: `["create"]`, `["update"]`, `["delete"]`, `["no-op"]`, `["read"]` (data sources), or `["delete", "create"]` / `["create", "delete"]` for a replacement.
+- **`change.after`** is the resource after apply. It's `null` for a delete; use `change.before` there.
+- **Values that are only known after apply** (`uuid` here) are `null` in `after`, and `true` in `after_unknown`. A policy can't check a value nobody knows yet.
+- **Attributes you didn't set** are there too, as `null` (`running` here). They're never missing.
+- **`mode`** is `managed` for resources and `data` for data sources.
+- **Units are as written.** This VM has `memory = 1` with `memory_unit = "GiB"`. A policy that reads `memory` as MiB would think it has 1 MiB. Without `memory_unit`, libvirt reads memory as **KiB**.
+
+Other top-level keys: `planned_values` (the whole planned state, by module), `configuration` (the configuration itself, including expressions), `variables`, `output_changes`, `prior_state`. See [JSON output format](https://developer.hashicorp.com/terraform/internals/json-format).
 
 ---
 
-## Writing Your First Policy
+## The Example Policies
 
-### Example 1: Network Naming Convention
-
-**Policy** (`network_naming.rego`):
-```rego
-package terraform.libvirt.naming
-
-import future.keywords.if
-import future.keywords.contains
-
-# Deny networks without proper naming
-deny[msg] {
-    resource := input.resource_changes[_]
-    resource.type == "libvirt_network"
-    resource.change.actions[_] == "create"
-    
-    name := resource.change.after.name
-    not startswith(name, "net-")
-    
-    msg := sprintf(
-        "Network '%s' must start with 'net-' prefix",
-        [name]
-    )
-}
+```
+example/
+├── main.tf, variables.tf        # a network, VMs and their disks
+├── violations.tfvars            # values that break the policies
+├── compliant.tfvars             # values that pass them
+├── plan.json                    # real plan: terraform show -json, with violations.tfvars
+├── .regal/config.yaml           # linter settings
+└── policy/
+    ├── config/data.json         # data the policies read: data.config
+    └── terraform/libvirt/
+        ├── lib/lib.rego         # shared helpers (+ lib_test.rego)
+        ├── naming/naming.rego   # names and owners (+ naming_test.rego)
+        ├── resources/resources.rego  # memory, vCPU, disk limits (+ test)
+        └── network/network.rego      # forward modes, which networks VMs join (+ test)
 ```
 
-**Test** (`network_naming_test.rego`):
-```rego
-package terraform.libvirt.naming
+Each package lives in a directory with the same path, and each test sits next to the policy it tests, in a package with a `_test` suffix. This follows the [Rego style guide](https://www.openpolicyagent.org/docs/style-guide).
 
-test_network_naming_valid {
-    not deny with input as {
-        "resource_changes": [{
-            "type": "libvirt_network",
-            "change": {
-                "actions": ["create"],
-                "after": {"name": "net-production"}
-            }
-        }]
-    }
-}
+### Try it first
 
-test_network_naming_invalid {
-    deny with input as {
-        "resource_changes": [{
-            "type": "libvirt_network",
-            "change": {
-                "actions": ["create"],
-                "after": {"name": "production"}
-            }
-        }]
-    }
-}
-```
+You don't need Terraform or libvirt for this: `plan.json` is included.
 
-**Run Test**:
 ```bash
-opa test network_naming.rego network_naming_test.rego -v
+cd example
+
+opa eval -f pretty -d policy -i plan.json 'data.terraform.libvirt.network.deny'
 ```
 
-### Example 2: VM Resource Limits
+```json
+[
+  "libvirt_domain.vm[\"db\"]: network \"legacy-lab\" is neither in this plan nor a shared network [\"default\"]",
+  "libvirt_network.app: forward mode \"open\" is not allowed, use one of [\"nat\", \"route\", \"isolated\"]"
+]
+```
 
-**Policy** (`vm_limits.rego`):
+- `-d policy` loads every `.rego` and `data.json` file under `policy/`.
+- `-i plan.json` is the input.
+- The query asks for the `deny` set of one package. `data.terraform.libvirt[_].deny[_]` asks for every package at once.
+
+All violations, one per line:
+
+```bash
+opa eval -f raw -d policy -i plan.json '[m | some m in data.terraform.libvirt[_].deny]' | jq -r '.[]' | sort
+```
+
+```
+libvirt_domain.vm["Batch_01"]: 12 vCPUs is above the maximum of 8
+libvirt_domain.vm["Batch_01"]: 32768 MiB of memory is above the maximum of 16384 MiB
+libvirt_domain.vm["Batch_01"]: VM name "prod-Batch_01" must be <environment>-<name> in lowercase, like prod-web
+libvirt_domain.vm["db"]: network "legacy-lab" is neither in this plan nor a shared network ["default"]
+libvirt_domain.vm["web"]: production VMs need at least 2 vCPUs (has 1)
+libvirt_domain.vm["web"]: production VMs need at least 2048 MiB of memory (has 1024)
+libvirt_network.app: forward mode "open" is not allowed, use one of ["nat", "route", "isolated"]
+libvirt_network.app: network name "prod-app" must be net-<environment>-<name>, like net-prod-app
+libvirt_volume.data["Batch_01"]: 250 GiB disk is above the maximum of 100 GiB
+```
+
+Open [`violations.tfvars`](./example/violations.tfvars) and match each message to the line that caused it.
+
+### `lib`: helpers every policy uses
+
+```rego
+package terraform.libvirt.lib
+
+# The plan. `terraform show -json` output is the input itself;
+# HCP Terraform wraps it as input.plan, next to input.run.
+# This makes every policy work in both places.
+plan := object.get(input, "plan", input)
+
+# Resources that will exist after apply: created, updated or replaced.
+# Deletes are left out, and so are no-ops (nothing changes, nothing to check).
+changes contains rc if {
+	some rc in plan.resource_changes
+	rc.mode == "managed"
+	some action in rc.change.actions
+	action in {"create", "update"}
+}
+```
+
+`lib.rego` also converts sizes (`mib(2, "GiB") == 2048`), knows libvirt's default units, and gets the environment from a name. Every other package imports it with `import data.terraform.libvirt.lib`.
+
+### `naming`: names and owners
+
+```rego
+package terraform.libvirt.naming
+
+import data.terraform.libvirt.lib
+
+vm_name_pattern := `^(dev|staging|prod)(-[a-z0-9]+)+$`
+
+deny contains msg if {
+	some rc in lib.changes
+	rc.type == "libvirt_domain"
+	not regex.match(vm_name_pattern, rc.change.after.name)
+
+	msg := sprintf(
+		"%s: VM name %q must be <environment>-<name> in lowercase, like prod-web",
+		[rc.address, rc.change.after.name],
+	)
+}
+```
+
+The pattern is a raw string (backticks), so backslashes don't need escaping. libvirt has no tags, so the policy also requires `owner=<team>` in every VM's `description`.
+
+### `resources`: limits, in the right unit
+
+The same VM can be written as `memory = 2, memory_unit = "GiB"`, `memory = 2048, memory_unit = "MiB"` or `memory = 2097152` (no unit: KiB). The policy converts everything to MiB first:
+
 ```rego
 package terraform.libvirt.resources
 
-import future.keywords.if
+import data.terraform.libvirt.lib
 
-# Minimum memory requirement
-min_memory := 512
+vms contains vm if {
+	some rc in lib.changes
+	rc.type == "libvirt_domain"
 
-# Maximum memory limit
-max_memory := 16384
-
-# Deny VMs with insufficient memory
-deny[msg] {
-    resource := input.resource_changes[_]
-    resource.type == "libvirt_domain"
-    resource.change.actions[_] == "create"
-    
-    memory := resource.change.after.memory
-    memory < min_memory
-    
-    msg := sprintf(
-        "VM '%s' memory (%d MB) is below minimum (%d MB)",
-        [resource.change.after.name, memory, min_memory]
-    )
+	vm := {
+		"address": rc.address,
+		"name": rc.change.after.name,
+		"vcpu": rc.change.after.vcpu,
+		"memory_mib": lib.mib(rc.change.after.memory, lib.unit(rc.change.after.memory_unit, "KiB")),
+	}
 }
 
-# Deny VMs exceeding memory limit
-deny[msg] {
-    resource := input.resource_changes[_]
-    resource.type == "libvirt_domain"
-    resource.change.actions[_] == "create"
-    
-    memory := resource.change.after.memory
-    memory > max_memory
-    
-    msg := sprintf(
-        "VM '%s' memory (%d MB) exceeds maximum (%d MB)",
-        [resource.change.after.name, memory, max_memory]
-    )
-}
-
-# Deny VMs with too many vCPUs
-deny[msg] {
-    resource := input.resource_changes[_]
-    resource.type == "libvirt_domain"
-    resource.change.actions[_] == "create"
-    
-    vcpu := resource.change.after.vcpu
-    vcpu > 8
-    
-    msg := sprintf(
-        "VM '%s' has too many vCPUs (%d), maximum is 8",
-        [resource.change.after.name, vcpu]
-    )
+deny contains msg if {
+	some vm in vms
+	vm.memory_mib > 16384
+	msg := sprintf("%s: %d MiB of memory is above the maximum of 16384 MiB", [vm.address, vm.memory_mib])
 }
 ```
 
----
+What if someone writes `memory_unit = "gigs"`? `lib.unit` is undefined for a unit it doesn't know, so `memory_mib` is undefined, so the VM isn't in `vms` at all, and **every limit silently passes**. That's why the real `resources.rego` has a rule that denies unknown units. Look for that pattern in every policy you write.
 
-## Policy Structure and Organization
+`resources.rego` also has a `warn` rule: more than 4 vCPUs is allowed, but reported.
 
-### Directory Structure
-
-```
-policies/
-├── terraform/
-│   ├── libvirt/
-│   │   ├── naming.rego           # Naming conventions
-│   │   ├── resources.rego        # Resource limits
-│   │   ├── security.rego         # Security policies
-│   │   └── compliance.rego       # Compliance rules
-│   └── common/
-│       ├── tagging.rego          # Tagging policies
-│       └── helpers.rego          # Reusable functions
-├── tests/
-│   ├── naming_test.rego
-│   ├── resources_test.rego
-│   └── security_test.rego
-└── data/
-    ├── allowed_networks.json
-    └── approved_images.json
-```
-
-### Package Organization
-
-```rego
-# Base package for all Terraform policies
-package terraform
-
-# Libvirt-specific policies
-package terraform.libvirt
-
-# Naming policies
-package terraform.libvirt.naming
-
-# Security policies
-package terraform.libvirt.security
-```
-
-### Reusable Helper Functions
-
-**helpers.rego**:
-```rego
-package terraform.helpers
-
-import future.keywords.if
-
-# Check if resource is being created
-is_create(resource) if {
-    resource.change.actions[_] == "create"
-}
-
-# Check if resource is being updated
-is_update(resource) if {
-    resource.change.actions[_] == "update"
-}
-
-# Check if resource is being deleted
-is_delete(resource) if {
-    resource.change.actions[_] == "delete"
-}
-
-# Get resource name safely
-resource_name(resource) := name if {
-    name := resource.change.after.name
-} else := resource.address
-
-# Check if string matches pattern
-matches_pattern(str, pattern) if {
-    regex.match(pattern, str)
-}
-```
-
----
-
-## Common Policy Patterns
-
-### Pattern 1: Allowed Values
+### `network`: data from outside the policy
 
 ```rego
 package terraform.libvirt.network
 
-import future.keywords.if
+import data.config
+import data.terraform.libvirt.lib
 
-# Allowed network modes
-allowed_modes := {"nat", "route", "bridge"}
+forward_mode(network) := object.get(network, ["forward", "mode"], "isolated")
 
-deny[msg] {
-    resource := input.resource_changes[_]
-    resource.type == "libvirt_network"
-    
-    mode := resource.change.after.mode
-    not mode in allowed_modes
-    
-    msg := sprintf(
-        "Network '%s' uses invalid mode '%s'. Allowed: %v",
-        [resource.change.after.name, mode, allowed_modes]
-    )
+deny contains msg if {
+	some rc in lib.changes
+	rc.type == "libvirt_network"
+	mode := forward_mode(rc.change.after)
+	not mode in config.allowed_forward_modes
+
+	msg := sprintf(
+		"%s: forward mode %q is not allowed, use one of %v",
+		[rc.address, mode, config.allowed_forward_modes],
+	)
 }
 ```
 
-### Pattern 2: Required Fields
+`data.config` comes from [`policy/config/data.json`](./example/policy/config/data.json). OPA loads a `data.json` file under the path of its directory: `policy/config/data.json` becomes `data.config`. Lists that change more often than the rules (allowed modes, shared networks, approved images) belong in data, not in code.
 
-```rego
-package terraform.libvirt.tagging
+The second rule in `network.rego` is a **cross-resource** check: a VM may only join a network that is in the same plan, or one of the shared networks from the data file.
 
-import future.keywords.if
+"In the same plan" hides a trap, and the first version of this policy fell into it. It collected networks from `lib.changes`, which leaves out no-ops. On the *first* plan everything is being created, so it worked. On the next plan, after an apply, the network already exists: its action is `["no-op"]`, and a new VM joining it was denied. That's why `known_networks` looks at all of `resource_changes`, and why `network_test.rego` has a test with an existing network. Test your policies against a second plan, not only against a fresh one.
 
-# Required tags for all resources
-required_tags := {"environment", "owner", "project"}
 
-deny[msg] {
-    resource := input.resource_changes[_]
-    resource.type in {"libvirt_network", "libvirt_domain", "libvirt_volume"}
-    
-    # Get tags from resource
-    tags := object.keys(resource.change.after.tags)
-    
-    # Find missing tags
-    missing := required_tags - tags
-    count(missing) > 0
-    
-    msg := sprintf(
-        "Resource '%s' is missing required tags: %v",
-        [resource.address, missing]
-    )
-}
+### Make your own plan
+
+With Terraform and libvirt set up (see [`docs/libvirt-setup.md`](../../docs/libvirt-setup.md)):
+
+```bash
+cd example
+terraform init
+terraform plan -var-file=violations.tfvars -out=tfplan
+terraform show -json tfplan > plan.json
+opa eval -f pretty -d policy -i plan.json 'data.terraform.libvirt[_].deny'
 ```
 
-### Pattern 3: Conditional Policies
-
-```rego
-package terraform.libvirt.security
-
-import future.keywords.if
-
-# Production VMs must have specific settings
-deny[msg] {
-    resource := input.resource_changes[_]
-    resource.type == "libvirt_domain"
-    
-    # Check if production environment
-    tags := resource.change.after.tags
-    tags.environment == "production"
-    
-    # Production VMs must have at least 2 vCPUs
-    vcpu := resource.change.after.vcpu
-    vcpu < 2
-    
-    msg := sprintf(
-        "Production VM '%s' must have at least 2 vCPUs (has %d)",
-        [resource.change.after.name, vcpu]
-    )
-}
-```
-
-### Pattern 4: Cross-Resource Validation
-
-```rego
-package terraform.libvirt.dependencies
-
-import future.keywords.if
-
-# Get all networks
-networks[name] {
-    resource := input.resource_changes[_]
-    resource.type == "libvirt_network"
-    name := resource.change.after.name
-}
-
-# Deny VMs without valid network
-deny[msg] {
-    resource := input.resource_changes[_]
-    resource.type == "libvirt_domain"
-    
-    # Get network from VM
-    network_name := resource.change.after.network_interface[_].network_name
-    
-    # Check if network exists
-    not network_name in networks
-    
-    msg := sprintf(
-        "VM '%s' references non-existent network '%s'",
-        [resource.change.after.name, network_name]
-    )
-}
-```
+Nothing is applied: OPA only needs the plan. Try `compliant.tfvars`: every `deny` set is empty.
 
 ---
 
 ## Testing Policies
 
-### Test Structure
+Policies are code: they have bugs, and they need tests. OPA has a test runner built in.
+
+```bash
+cd example
+opa test policy -v
+```
+
+```
+policy/terraform/libvirt/naming/naming_test.rego:
+data.terraform.libvirt.naming_test.test_good_vm_name: PASS (5.1ms)
+...
+--------------------------------------------------------------------------------
+PASS: 36/36
+```
+
+A test is a rule whose name starts with `test_`. It passes when its body is true. `with input as` replaces the input for one expression:
 
 ```rego
-package terraform.libvirt.naming
+package terraform.libvirt.resources_test
 
-# Test valid case
-test_valid_network_name {
-    not deny with input as {
-        "resource_changes": [{
-            "type": "libvirt_network",
-            "change": {
-                "actions": ["create"],
-                "after": {"name": "net-production"}
-            }
-        }]
-    }
+import data.terraform.libvirt.resources
+
+vm(name, memory, unit, vcpu) := {"resource_changes": [{
+	"address": "libvirt_domain.this",
+	"mode": "managed",
+	"type": "libvirt_domain",
+	"change": {
+		"actions": ["create"],
+		"after": {"name": name, "memory": memory, "memory_unit": unit, "vcpu": vcpu},
+	},
+}]}
+
+test_units_are_normalised if {
+	# 2 GiB is 2048 MiB: enough for production
+	count(resources.deny) == 0 with input as vm("prod-web", 2, "GiB", 2)
 }
 
-# Test invalid case
-test_invalid_network_name {
-    count(deny) > 0 with input as {
-        "resource_changes": [{
-            "type": "libvirt_network",
-            "change": {
-                "actions": ["create"],
-                "after": {"name": "production"}
-            }
-        }]
-    }
-}
+test_default_unit_is_not_mib if {
+	# The classic mistake: memory = 2048 without a unit is 2 MiB, not 2 GiB
+	plan := vm("dev-web", 2048, null, 1)
 
-# Test multiple resources
-test_mixed_network_names {
-    violations := deny with input as {
-        "resource_changes": [
-            {
-                "type": "libvirt_network",
-                "change": {
-                    "actions": ["create"],
-                    "after": {"name": "net-valid"}
-                }
-            },
-            {
-                "type": "libvirt_network",
-                "change": {
-                    "actions": ["create"],
-                    "after": {"name": "invalid"}
-                }
-            }
-        ]
-    }
-    count(violations) == 1
+	resources.deny == {"libvirt_domain.this: 2 MiB of memory is below the minimum of 512 MiB"} with input as plan
 }
 ```
 
-### Running Tests
+Some habits worth copying from the example tests:
+
+- **Compare the whole set of messages**, not `count(deny) > 0`. A count passes when the *wrong* rule fires.
+- **Test the pass case too.** A policy that denies everything passes every "should fail" test.
+- **Test the edges:** missing attributes, `null`, other units, deletes, the HCP Terraform input wrapper (`lib_test.rego`).
+- **Replace data** the same way: `with data.config.allowed_forward_modes as ["open"]` (see `network_test.rego`).
+- **Build fixtures with small functions** (`vm(...)`, `volume(...)`) instead of copying JSON into every test.
+
+### Coverage
 
 ```bash
-# Run all tests
-opa test . -v
-
-# Run specific test file
-opa test naming_test.rego -v
-
-# Run with coverage
-opa test . --coverage
-
-# Run with detailed output
-opa test . -v --explain=full
+opa test policy --coverage --format=json | jq '.coverage'
+# 100
 ```
 
-### Test Coverage
-
-```bash
-# Generate coverage report
-opa test . --coverage --format=json > coverage.json
-
-# View coverage
-opa test . --coverage
-```
+Coverage shows which lines of the policies ran during the tests. The `not_covered` ranges in the JSON output point at rules no test reaches.
 
 ---
 
-## Policy Enforcement Levels
+## Linting with Regal
 
-### Advisory (Informational)
+`opa check --strict` finds errors (unused variables, unused imports, shadowed names). [Regal](https://www.openpolicyagent.org/projects/regal) goes further: it checks the [Rego style guide](https://www.openpolicyagent.org/docs/style-guide) and catches likely bugs.
 
-**Purpose**: Warn users without blocking
-
-```rego
-package terraform.advisory
-
-warn[msg] {
-    resource := input.resource_changes[_]
-    resource.type == "libvirt_domain"
-    
-    memory := resource.change.after.memory
-    memory < 1024
-    
-    msg := sprintf(
-        "ADVISORY: VM '%s' has low memory (%d MB). Consider increasing to 1024 MB or more.",
-        [resource.change.after.name, memory]
-    )
-}
+```bash
+cd example
+opa fmt --list policy        # files that need formatting (none)
+opa check --strict policy
+regal lint policy
+# 8 files linted. No violations found.
 ```
 
-### Soft Mandatory (Can Override)
+Writing the example, Regal caught, among other things:
 
-**Purpose**: Require justification to proceed
+- `plan := input.plan if input.plan`: a *redundant existence check*, replaced by `object.get(input, "plan", input)`
+- two `deny` rules separated by a helper: a *messy rule*, so the helpers moved up
+- a test helper called `net`, which *shadows a built-in* function
+- test lines longer than 120 characters
 
-```rego
-package terraform.soft_mandatory
-
-# Can be overridden with approval
-deny[msg] {
-    resource := input.resource_changes[_]
-    resource.type == "libvirt_domain"
-    
-    vcpu := resource.change.after.vcpu
-    vcpu > 4
-    
-    # Check for override flag
-    not input.override_approved
-    
-    msg := sprintf(
-        "SOFT MANDATORY: VM '%s' has %d vCPUs (>4). Requires approval to proceed.",
-        [resource.change.after.name, vcpu]
-    )
-}
-```
-
-### Hard Mandatory (Blocking)
-
-**Purpose**: Cannot proceed without fixing
-
-```rego
-package terraform.hard_mandatory
-
-# Cannot be overridden
-deny[msg] {
-    resource := input.resource_changes[_]
-    resource.type == "libvirt_network"
-    
-    mode := resource.change.after.mode
-    mode == "isolated"
-    
-    msg := sprintf(
-        "HARD MANDATORY: Network '%s' cannot use 'isolated' mode. This is blocked by security policy.",
-        [resource.change.after.name]
-    )
-}
-```
+`.regal/config.yaml` tells Regal that `data.config` is real (it comes from a JSON file, which Regal doesn't read). Most editors have a Regal plugin (VS Code: "OPA" extension) that shows the same findings as you type.
 
 ---
 
-## Sentinel Overview (Enterprise)
+## Enforcement: deny, warn and CI
 
-### What is Sentinel?
+OPA itself doesn't block anything. It answers queries; your pipeline decides what to do with the answer. The example uses two rule names:
 
-**HashiCorp Sentinel** is an enterprise policy-as-code framework integrated with:
+- **`deny`**: violations. The pipeline fails.
+- **`warn`**: advisories. The pipeline prints them and carries on.
 
-- Terraform Cloud/Enterprise
-- Vault Enterprise
-- Consul Enterprise
-- Nomad Enterprise
+```bash
+opa eval -f raw -d policy -i plan.json '[m | some m in data.terraform.libvirt[_].warn]' | jq -r '.[]'
+# libvirt_domain.vm["Batch_01"]: 12 vCPUs, are you sure? Most lab VMs need 4 or fewer
+```
 
-### Sentinel vs OPA
+`--fail-defined` makes `opa eval` exit with 1 when the query has any result:
 
-| Feature | OPA (Open Source) | Sentinel (Enterprise) |
-|---------|-------------------|----------------------|
-| **Cost** | Free | Paid (Enterprise) |
-| **Language** | Rego | Sentinel |
-| **Integration** | Manual | Native TFC/TFE |
-| **UI** | CLI only | Web UI |
-| **Policy Sets** | Manual | Managed |
-| **Enforcement** | External | Built-in |
-| **Testing** | OPA test | Sentinel test |
+```bash
+opa eval --fail-defined -d policy -i plan.json 'data.terraform.libvirt[_].deny[_]' > /dev/null
+echo $?
+# 1 with violations.tfvars, 0 with compliant.tfvars
+```
 
-### Sentinel Example
+A GitHub Actions job:
+
+```yaml
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OPA
+        run: |
+          curl -sSL -o opa https://openpolicyagent.org/downloads/v1.21.0/opa_linux_amd64_static
+          chmod +x opa && sudo mv opa /usr/local/bin/
+
+      - name: Test the policies
+        run: opa test policy
+
+      # plan.json comes from an earlier step: terraform plan + terraform show -json
+      - name: Warnings
+        run: opa eval -f raw -d policy -i plan.json '[m | some m in data.terraform.libvirt[_].warn]' | jq -r '.[]'
+
+      - name: Violations
+        run: |
+          opa eval -f raw -d policy -i plan.json '[m | some m in data.terraform.libvirt[_].deny]' | jq -r '.[]'
+          opa eval --fail-defined -d policy -i plan.json 'data.terraform.libvirt[_].deny[_]' > /dev/null
+```
+
+An "override with approval" (what Sentinel calls *soft mandatory*) isn't something a policy can decide by itself: the plan has no field that says "approved". In a pipeline, that's a manual approval step that lets the job continue despite a failed `deny`. In HCP Terraform it's built in, as the next section shows.
+
+---
+
+## HCP Terraform: OPA, Sentinel and Terraform Policy
+
+HCP Terraform (and Terraform Enterprise) run policies on every run, and show the results in the UI.
+
+### OPA in HCP Terraform
+
+You connect a policy set (a VCS repository with your `.rego` files) and, for each policy, give the **query**, for example `data.terraform.libvirt.naming.deny`. An empty result means the policy passes.
+
+Two differences from running OPA yourself:
+
+1. **The input is wrapped.** HCP Terraform passes `{"plan": <the plan JSON>, "run": <run details>}`. Your rules must read `input.plan.resource_changes`, not `input.resource_changes`. The example's `lib.plan` handles both, and `lib_test.rego` tests it. `input.run` gives you the workspace, organisation, project and more, for rules like "no auto-apply workspaces".
+2. **Enforcement levels** are set per policy:
+   - **advisory**: failures are reported, the run continues
+   - **mandatory**: failures stop the run; users with *Manage Policy Overrides* permission can override
+
+### Sentinel
+
+Sentinel is HashiCorp's own policy language. In HCP Terraform it has three enforcement levels: **advisory**, **soft mandatory** (overridable) and **hard mandatory**. The forward-mode rule in Sentinel:
 
 ```sentinel
 import "tfplan/v2" as tfplan
 
-# Allowed VM memory sizes
-allowed_memory = [512, 1024, 2048, 4096, 8192]
+allowed_modes = ["nat", "route"]
 
-# Main rule
+# libvirt networks that will exist after apply
+networks = filter tfplan.resource_changes as _, rc {
+	rc.mode is "managed" and
+		rc.type is "libvirt_network" and
+		(rc.change.actions contains "create" or rc.change.actions contains "update")
+}
+
 main = rule {
-    all tfplan.resource_changes as _, rc {
-        rc.type is "libvirt_domain" implies
-        rc.change.after.memory in allowed_memory
-    }
+	all networks as _, rc {
+		rc.change.after.forward.mode in allowed_modes
+	}
 }
 ```
 
-### When to Use Each
+This was tested with the free Sentinel CLI (`sentinel test`, v0.41.0), with mocks made from this module's `plan.json`: `main` is `false` for the violations plan and `true` for the compliant one.
 
-**Use OPA when**:
-- ✅ Open-source requirement
-- ✅ Multi-tool policies (K8s, Terraform, etc.)
-- ✅ Custom integrations needed
-- ✅ Budget constraints
+### Terraform policy (beta)
 
-**Use Sentinel when**:
-- ✅ Using Terraform Cloud/Enterprise
-- ✅ Need native integration
-- ✅ Want managed policy sets
-- ✅ Enterprise support required
+HCP Terraform also has a newer, HCL-based framework, **Terraform policy**. It's the only one of the three that works with **Stacks** (Sentinel and OPA policy sets only apply to workspaces). It's in beta and needs a Terraform 1.16 pre-release in HCP Terraform; see [Define policies for the Terraform policy framework](https://developer.hashicorp.com/terraform/cloud-docs/policy-enforcement/define-policies/terraform-policy).
+
+### Which one?
+
+| | OPA | Sentinel | Terraform policy |
+|---|---|---|---|
+| **Language** | Rego | Sentinel | HCL |
+| **Runs locally** | Yes, free and open source | Yes, free CLI | In HCP Terraform |
+| **HCP Terraform** | Advisory, mandatory | Advisory, soft mandatory, hard mandatory | Advisory, mandatory overridable, mandatory |
+| **Stacks** | No | No | Yes |
+| **Beyond Terraform** | Kubernetes, APIs, CI, anything JSON | HashiCorp products | Terraform only |
+| **Choose it when** | You want one policy language for everything, or no HCP Terraform | You're all-in on HCP Terraform and want pre-written policy libraries | You use Stacks, or want policies in HCL |
 
 ---
 
 ## Best Practices
 
-### 1. Write Clear Error Messages
-
-```rego
-# ❌ Bad: Vague message
-deny[msg] {
-    resource.memory < 512
-    msg := "Memory too low"
-}
-
-# ✅ Good: Specific message
-deny[msg] {
-    resource := input.resource_changes[_]
-    resource.type == "libvirt_domain"
-    memory := resource.change.after.memory
-    memory < 512
-    
-    msg := sprintf(
-        "VM '%s' memory (%d MB) is below minimum requirement (512 MB). Increase memory to at least 512 MB.",
-        [resource.change.after.name, memory]
-    )
-}
-```
-
-### 2. Use Descriptive Package Names
-
-```rego
-# ❌ Bad: Generic
-package policies
-
-# ✅ Good: Specific
-package terraform.libvirt.security.network
-```
-
-### 3. Separate Concerns
-
-```rego
-# ✅ Good: One policy per file
-# naming.rego - Naming conventions
-# security.rego - Security policies
-# compliance.rego - Compliance rules
-# resources.rego - Resource limits
-```
-
-### 4. Test Thoroughly
-
-```rego
-# Test valid cases
-test_valid_config { ... }
-
-# Test invalid cases
-test_invalid_config { ... }
-
-# Test edge cases
-test_edge_cases { ... }
-
-# Test multiple scenarios
-test_complex_scenarios { ... }
-```
-
-### 5. Use External Data
-
-```rego
-# Load allowed values from file
-allowed_networks := data.networks.approved
-
-# Load configuration from JSON
-config := data.config.libvirt
-```
-
-### 6. Version Control Policies
-
-```bash
-policies/
-├── .git/
-├── CHANGELOG.md
-├── README.md
-└── terraform/
-    └── libvirt/
-        ├── v1.0.0/
-        ├── v1.1.0/
-        └── v2.0.0/
-```
+1. **Write actionable messages.** Include the resource address, the value found and what's allowed: `libvirt_domain.vm["web"]: production VMs need at least 2 vCPUs (has 1)`.
+2. **Handle undefined on purpose.** Missing attributes, `null`, unknown units: decide what they mean (`object.get` with a default, or a rule that denies them), and test it.
+3. **Normalise before you compare.** Units, case, list-or-single-value: convert once, in a helper.
+4. **Keep data out of rules.** Allowed values, approved images, shared networks go in `data.json`.
+5. **One concern per package**, and a package path that matches the directory.
+6. **Test both directions**, and compare exact message sets.
+7. **Lint.** `opa fmt`, `opa check --strict` and Regal in CI, like any other code.
+8. **Use `warn` before `deny`.** Roll a new rule out as advisory, fix what it finds, then make it mandatory.
+9. **Write for the wrapped input** (`input.plan`) if the policies might ever run in HCP Terraform.
 
 ---
 
 ## Hands-On Labs
 
-### Lab 1: Basic Policy Development (20 minutes)
+All labs work in [`example/`](./example/). Labs 1 and 2 need only OPA; making new plans needs Terraform and libvirt.
 
-**Objective**: Write and test a basic OPA policy for Libvirt networks
+### Lab 1: Read, fix, re-check (20 minutes)
 
-**Tasks**:
-1. Install OPA
-2. Create a policy for network naming conventions
-3. Write tests for the policy
-4. Generate a Terraform plan and validate it
+1. Run the policy tests and the lint: `opa test policy -v`, `regal lint policy`.
+2. Evaluate the included plan and list every violation (the command is in [Try it first](#try-it-first)).
+3. Copy `violations.tfvars` to `mine.tfvars` and fix it, one violation at a time, **without** looking at `compliant.tfvars`.
+4. After each fix, make a new plan and evaluate it:
+   ```bash
+   terraform plan -var-file=mine.tfvars -out=tfplan && terraform show -json tfplan > mine.json
+   opa eval --fail-defined -d policy -i mine.json 'data.terraform.libvirt[_].deny[_]'
+   ```
+5. You're done when `--fail-defined` exits with 0. Is there still a warning?
 
-**Starter Policy** (`network_policy.rego`):
+No libvirt? Edit `plan.json` with `jq` instead, for example: `jq '(.resource_changes[] | select(.type == "libvirt_network") | .change.after.forward.mode) = "nat"' plan.json > fixed.json`.
+
+### Lab 2: Write a policy, test first (25 minutes)
+
+**Rule**: every volume must be `qcow2` (`change.after.target.format.type`). A volume with no format set is a violation too.
+
+1. Create `policy/terraform/libvirt/storage/storage_test.rego` with three tests: a qcow2 volume passes, a `raw` volume is denied, a volume with `target = null` is denied. Run `opa test policy`: they fail.
+2. Create `storage.rego` and make the tests pass.
+3. Run `regal lint policy` and fix what it finds.
+4. Evaluate `plan.json`: the example's volumes are all qcow2, so the result is `[]`.
+
+<details>
+<summary>Solution</summary>
+
 ```rego
-package terraform.libvirt
+# METADATA
+# title: Storage
+# description: All volumes are qcow2
+package terraform.libvirt.storage
 
-import future.keywords.if
+import data.terraform.libvirt.lib
 
-# Networks must start with "net-" and end with environment
-deny[msg] {
-    resource := input.resource_changes[_]
-    resource.type == "libvirt_network"
-    
-    name := resource.change.after.name
-    not startswith(name, "net-")
-    
-    msg := sprintf("Network '%s' must start with 'net-'", [name])
-}
+# METADATA
+# title: qcow2 volumes
+# entrypoint: true
+deny contains msg if {
+	some rc in lib.changes
+	rc.type == "libvirt_volume"
+	format := object.get(rc.change.after, ["target", "format", "type"], "not set")
+	format != "qcow2"
 
-# Networks must use NAT or route mode
-deny[msg] {
-    resource := input.resource_changes[_]
-    resource.type == "libvirt_network"
-    
-    mode := resource.change.after.mode
-    not mode in {"nat", "route"}
-    
-    msg := sprintf("Network '%s' must use 'nat' or 'route' mode (not '%s')", [name, mode])
+	msg := sprintf("%s: volume format is %q, must be qcow2", [rc.address, format])
 }
 ```
 
-**Your Task**: 
-1. Add tests for valid and invalid cases
-2. Create a Terraform configuration
-3. Generate plan JSON
-4. Validate with OPA
+```rego
+package terraform.libvirt.storage_test
 
-**Expected Output**:
-```bash
-$ opa test . -v
-PASS: 4/4
-```
+import data.terraform.libvirt.storage
 
----
+volume(target) := {"resource_changes": [{
+	"address": "libvirt_volume.this",
+	"mode": "managed",
+	"type": "libvirt_volume",
+	"change": {"actions": ["create"], "after": {"target": target}},
+}]}
 
-### Lab 2: Resource Limits Policy (25 minutes)
-
-**Objective**: Implement comprehensive resource limit policies
-
-**Tasks**:
-1. Create policies for VM memory and vCPU limits
-2. Add volume size restrictions
-3. Implement environment-specific rules
-4. Test with multiple scenarios
-
-**Starter Code** (`main.tf`):
-```hcl
-variable "environment" {
-  type = string
+test_qcow2 if {
+	count(storage.deny) == 0 with input as volume({"format": {"type": "qcow2"}})
 }
 
-resource "libvirt_domain" "vm" {
-  name   = "vm-${var.environment}"
-  memory = var.vm_memory
-  vcpu   = var.vm_vcpu
-  
-  tags = {
-    environment = var.environment
-    managed_by  = "terraform"
-  }
+test_raw if {
+	plan := volume({"format": {"type": "raw"}})
+
+	storage.deny == {`libvirt_volume.this: volume format is "raw", must be qcow2`} with input as plan
 }
 
-resource "libvirt_volume" "disk" {
-  name = "disk-${var.environment}"
-  size = var.disk_size
+test_no_format if {
+	storage.deny == {`libvirt_volume.this: volume format is "not set", must be qcow2`} with input as volume(null)
 }
 ```
 
-**Your Task**: Create `resources.rego` with:
-- Memory limits: 512 MB - 16 GB
-- vCPU limits: 1-8 cores
-- Production VMs: minimum 2 GB RAM, 2 vCPUs
-- Development VMs: maximum 4 GB RAM, 2 vCPUs
-- Volume size: 5 GB - 500 GB
+Why `object.get` with a default, instead of `rc.change.after.target.format.type != "qcow2"`? With `target = null`, that path is undefined, the comparison is undefined, and the volume would silently pass. `test_no_format` catches exactly that bug.
 
-**Expected Result**:
-```bash
-$ terraform plan -out=tfplan.binary
-$ terraform show -json tfplan.binary > tfplan.json
-$ opa eval --data resources.rego --input tfplan.json "data.terraform.libvirt.deny"
-[]  # No violations
+</details>
+
+### Lab 3: Protect production from destroys (25 minutes)
+
+**Rule**: a plan must never delete or replace a production VM (name starting with `prod-`).
+
+This one is different: `lib.changes` leaves deletes out on purpose. And for a delete, `change.after` is `null`.
+
+1. Write the tests first: deleting `prod-web` is denied, replacing it (`["delete", "create"]`) is denied, `["create", "delete"]` (create before destroy) is denied, deleting `dev-web` is allowed.
+2. Write `policy/terraform/libvirt/protect/protect.rego`.
+3. Bonus: check it against a real plan. Apply `compliant.tfvars` (it needs a storage pool called `default`, see [`docs/libvirt-setup.md`](../../docs/libvirt-setup.md)). Then copy it to `renamed.tfvars`, rename the `web` key to `web2`, and plan with that file. Terraform plans to delete `libvirt_domain.vm["web"]` (prod-web) and create `vm["web2"]`, and your policy denies it. Run `terraform destroy -var-file=compliant.tfvars` afterwards.
+
+
+<details>
+<summary>Solution</summary>
+
+```rego
+# METADATA
+# title: Protect production
+# description: Production VMs are never destroyed or replaced by a plan
+package terraform.libvirt.protect
+
+import data.terraform.libvirt.lib
+
+# METADATA
+# title: No deleting prod VMs
+# entrypoint: true
+deny contains msg if {
+	# Not lib.changes: that leaves deletes out on purpose
+	some rc in lib.plan.resource_changes
+	rc.type == "libvirt_domain"
+	"delete" in rc.change.actions
+
+	# after is null for a delete, so the name comes from before
+	lib.environment(rc.change.before.name) == "prod"
+
+	msg := sprintf("%s: plan wants to %v production VM %q", [rc.address, rc.change.actions, rc.change.before.name])
+}
 ```
 
----
+```rego
+package terraform.libvirt.protect_test
 
-### Lab 3: Compliance Policy Suite (30 minutes)
+import data.terraform.libvirt.protect
 
-**Objective**: Build a comprehensive compliance policy suite
+vm_change(name, actions) := {"resource_changes": [{
+	"address": "libvirt_domain.this",
+	"mode": "managed",
+	"type": "libvirt_domain",
+	"change": {"actions": actions, "before": {"name": name}, "after": null},
+}]}
 
-**Tasks**:
-1. Implement tagging requirements
-2. Add naming conventions
-3. Create security policies
-4. Build policy test suite
-5. Document policy decisions
+test_delete_prod if {
+	count(protect.deny) == 1 with input as vm_change("prod-web", ["delete"])
+}
 
-**Requirements**:
+test_replace_prod if {
+	plan := vm_change("prod-web", ["delete", "create"])
 
-**Tagging Policy**:
-- All resources must have: `environment`, `owner`, `project`
-- Production resources must have: `backup`, `monitoring`
+	protect.deny == {`libvirt_domain.this: plan wants to ["delete", "create"] production VM "prod-web"`} with input as plan
+}
 
-**Naming Policy**:
-- Networks: `net-<env>-<purpose>`
-- VMs: `vm-<env>-<app>-<number>`
-- Volumes: `vol-<env>-<purpose>`
+test_create_before_destroy_prod if {
+	count(protect.deny) == 1 with input as vm_change("prod-web", ["create", "delete"])
+}
 
-**Security Policy**:
-- No isolated networks
-- Production VMs must have at least 2 network interfaces
-- All volumes must be qcow2 format
-
-**Your Task**: Create complete policy suite with:
-- 3 policy files (tagging.rego, naming.rego, security.rego)
-- Test files for each policy
-- Integration test with full infrastructure
-- Documentation of policy decisions
-
-**Expected Result**:
-```bash
-$ opa test . --coverage
-PASS: 15/15
-Coverage: 95.2%
+test_delete_dev if {
+	count(protect.deny) == 0 with input as vm_change("dev-web", ["delete"])
+}
 ```
+
+Terraform has its own guard for this: `lifecycle { prevent_destroy = true }`. The difference is who controls it. `prevent_destroy` is in the module, and whoever edits the module can remove it. The policy is outside, owned by someone else, and applies to every module at once.
+
+</details>
 
 ---
 
 ## Checkpoint Quiz
 
-### Question 1: OPA vs Sentinel
-**What is the primary difference between OPA and Sentinel?**
-
-A) OPA is faster than Sentinel  
-B) OPA is open-source, Sentinel is enterprise  
-C) OPA only works with Kubernetes  
-D) Sentinel uses Rego language
+### Question 1: Policy vs validation
+**A module validates `memory_mb > 0`. Why would you also want a policy for memory?**
 
 <details>
 <summary>Show Answer</summary>
 
-**Answer: B) OPA is open-source, Sentinel is enterprise**
-
-**Explanation**: Open Policy Agent (OPA) is an open-source, general-purpose policy engine that can be used with any tool. HashiCorp Sentinel is an enterprise policy framework integrated with HashiCorp's enterprise products (Terraform Cloud/Enterprise, Vault, Consul, Nomad). OPA uses Rego language, while Sentinel uses its own Sentinel language.
+The module's validation is the module author's rule, and only applies to that module. An organisational rule ("production VMs need 2 GiB") should apply to every VM from every module, and shouldn't be removable by editing one module. That's what a policy, owned outside the configuration, gives you.
 
 </details>
 
 ---
 
-### Question 2: Rego Language
-**In Rego, what does the following expression do: `deny[msg] { ... }`?**
+### Question 2: Rego syntax
+**In OPA 1.x, what does `deny contains msg if { ... }` define?**
 
-A) Creates a function named deny  
-B) Defines a rule that collects violation messages  
-C) Imports the deny module  
-D) Declares a variable
+A) A function named deny  
+B) A set of violation messages: one element for every way the body succeeds  
+C) A boolean that's true if any message exists  
+D) Nothing: it's the old syntax
 
 <details>
 <summary>Show Answer</summary>
 
-**Answer: B) Defines a rule that collects violation messages**
-
-**Explanation**: In Rego, `deny[msg]` is a rule that collects all violation messages into a set. Each time the rule body evaluates to true, the `msg` value is added to the `deny` set. This pattern is commonly used for policy violations where you want to collect all errors, not just the first one.
+**B.** `contains` makes a *set* rule (a "partial set rule"). Every combination of values that makes the body true adds one `msg` to `deny`. The old way to write the same thing was `deny[msg] { ... }`, which OPA 1.x rejects.
 
 </details>
 
 ---
 
-### Question 3: Policy Enforcement Levels
-**Which enforcement level allows users to proceed with a justification?**
+### Question 3: Undefined
+**This rule is meant to deny VMs without an owner. A VM has no `description` at all. What happens?**
 
-A) Advisory  
-B) Soft Mandatory  
-C) Hard Mandatory  
-D) Critical
+```rego
+package quiz
+
+deny contains "VM needs an owner" if {
+	not contains(input.description, "owner=")
+}
+```
 
 <details>
 <summary>Show Answer</summary>
 
-**Answer: B) Soft Mandatory**
+It does **not** fire: the VM silently passes. OPA evaluates the reference `input.description` before it negates anything. The reference is undefined, so the whole line is undefined, and the rule body fails. `not` only turns undefined into true when the undefined thing *is* the expression, as in `not input.description`.
 
-**Explanation**: 
-- **Advisory**: Warnings only, no blocking
-- **Soft Mandatory**: Requires justification/approval to proceed
-- **Hard Mandatory**: Cannot proceed, must fix violation
+The fix is to decide what "missing" means before the negation:
 
-Soft mandatory policies allow flexibility for exceptional cases while still requiring explicit approval and documentation.
+```rego
+package quiz
+
+deny contains "VM needs an owner" if {
+	description := object.get(input, "description", "")
+	not contains(description, "owner=")
+}
+```
+
+In a real Terraform plan this particular case is rarer than it looks: attributes you don't set are in `change.after` as `null`, and `null` *is* defined (`contains(null, ...)` is undefined, so `not` makes it true). It bites with hand-written test input, nested objects that are `null` themselves, and HCP Terraform's `input.plan` wrapper.
 
 </details>
 
 ---
 
-### Question 4: Testing Policies
-**What command runs OPA policy tests with verbose output?**
-
-A) `opa run -v`  
-B) `opa test . -v`  
-C) `opa validate --verbose`  
-D) `opa check -v`
+### Question 4: Units
+**A VM has `memory = 2048` and no `memory_unit`. A policy reads `memory` and checks it's at least 512. Does it pass?**
 
 <details>
 <summary>Show Answer</summary>
 
-**Answer: B) `opa test . -v`**
-
-**Explanation**: The `opa test` command runs policy tests. The `.` specifies the current directory, and `-v` enables verbose output showing which tests passed/failed. Other useful flags include `--coverage` for coverage reports and `--explain=full` for detailed explanations.
+It passes, but it shouldn't. libvirt's default memory unit is **KiB**, so this VM has 2 MiB of memory. The policy has to take `memory_unit` into account, as `lib.mib` does in the example.
 
 </details>
 
 ---
 
-### Question 5: Terraform Integration
-**What is the correct workflow for validating Terraform with OPA?**
+### Question 5: The workflow
+**What is the correct order?**
 
-A) terraform apply → opa eval → terraform plan  
-B) opa eval → terraform plan → terraform apply  
-C) terraform plan → terraform show -json → opa eval  
-D) terraform init → opa eval → terraform plan
+A) `terraform apply` → `opa eval` → `terraform plan`  
+B) `terraform plan -out=tfplan` → `terraform show -json tfplan > plan.json` → `opa eval` → `terraform apply tfplan`  
+C) `opa eval` → `terraform plan` → `terraform apply`  
+D) `terraform validate` → `opa eval` → `terraform apply`
 
 <details>
 <summary>Show Answer</summary>
 
-**Answer: C) terraform plan → terraform show -json → opa eval**
-
-**Explanation**: The correct workflow is:
-1. `terraform plan -out=tfplan.binary` - Create execution plan
-2. `terraform show -json tfplan.binary > tfplan.json` - Convert to JSON
-3. `opa eval --data policy.rego --input tfplan.json "data.terraform.deny"` - Validate
-4. If no violations: `terraform apply tfplan.binary`
-
-This ensures policies are checked before applying changes.
+**B.** OPA checks the saved plan, and you apply *that* plan, so what was checked is exactly what gets applied.
 
 </details>
 
 ---
 
-### Question 6: Best Practices
-**Which is a best practice for writing policy error messages?**
-
-A) Keep messages short and generic  
-B) Include resource name, current value, and expected value  
-C) Use technical jargon only  
-D) Don't include any details
+### Question 6: HCP Terraform
+**Your policies work locally with `opa eval -i plan.json`. In HCP Terraform, every `deny` is empty, even for bad plans. Why?**
 
 <details>
 <summary>Show Answer</summary>
 
-**Answer: B) Include resource name, current value, and expected value**
-
-**Explanation**: Good error messages should be:
-- **Specific**: Include resource name and address
-- **Informative**: Show current vs expected values
-- **Actionable**: Explain how to fix the issue
-- **Clear**: Use plain language
-
-Example: `"VM 'web-server' memory (256 MB) is below minimum requirement (512 MB). Increase memory to at least 512 MB."`
+HCP Terraform wraps the plan: the input is `{"plan": ..., "run": ...}`. Rules that read `input.resource_changes` find nothing (it's undefined), so they never fire. Read `input.plan.resource_changes`, or use a helper like the example's `lib.plan` that works both ways.
 
 </details>
 
@@ -1252,61 +968,44 @@ Example: `"VM 'web-server' memory (256 MB) is below minimum requirement (512 MB)
 
 ## Additional Resources
 
-### Official Documentation
-- [Open Policy Agent](https://www.openpolicyagent.org/)
-- [Rego Language Reference](https://www.openpolicyagent.org/docs/latest/policy-language/)
-- [OPA Terraform Tutorial](https://www.openpolicyagent.org/docs/latest/terraform/)
-- [HashiCorp Sentinel](https://docs.hashicorp.com/sentinel)
+### OPA and Rego
+- [Policy Language](https://www.openpolicyagent.org/docs/policy-language): the Rego reference
+- [Policy Testing](https://www.openpolicyagent.org/docs/policy-testing)
+- [Terraform](https://www.openpolicyagent.org/docs/terraform): OPA's own Terraform tutorial
+- [Upgrading to v1.0](https://www.openpolicyagent.org/docs/v0-upgrade)
+- [Rego Style Guide](https://www.openpolicyagent.org/docs/style-guide)
+- [Regal](https://www.openpolicyagent.org/projects/regal)
+- [Rego Playground](https://play.openpolicyagent.org/)
 
-### Tools and Libraries
-- [Conftest](https://www.conftest.dev/) - Test configuration files with OPA
-- [Regula](https://regula.dev/) - Terraform security scanning with OPA
-- [Terraform Compliance](https://terraform-compliance.com/) - BDD-style testing
+### Terraform
+- [JSON Output Format](https://developer.hashicorp.com/terraform/internals/json-format): every field of `plan.json`
+- [Policy enforcement in HCP Terraform](https://developer.hashicorp.com/terraform/cloud-docs/policy-enforcement)
+- [Define OPA policies for HCP Terraform](https://developer.hashicorp.com/terraform/cloud-docs/policy-enforcement/define-policies/opa)
+- [Sentinel](https://developer.hashicorp.com/sentinel/docs)
 
-### Community Resources
-- [OPA Playground](https://play.openpolicyagent.org/) - Try Rego online
-- [Policy Library](https://github.com/open-policy-agent/library) - Example policies
-- [Styra Academy](https://academy.styra.com/) - OPA training
-
-### Next Steps
-- **PKR-100**: Packer Fundamentals (image building)
-- **Cloud Modules**: Apply policies to AWS/Azure
-- **Advanced OPA**: Custom functions, performance optimization
+### Tools
+- [Conftest](https://www.conftest.dev/): runs Rego policies against configuration files, including plan JSON
 
 ---
 
 ## Summary
 
-In this course, you learned:
-
-✅ **Policy as Code Concepts**: Why and when to use policy enforcement  
-✅ **OPA Fundamentals**: Architecture, installation, and workflow  
-✅ **Rego Language**: Syntax, data types, operators, and functions  
-✅ **Policy Development**: Writing, testing, and organizing policies  
-✅ **Common Patterns**: Allowed values, required fields, conditionals  
-✅ **Enforcement Levels**: Advisory, soft mandatory, hard mandatory  
-✅ **Sentinel Overview**: Enterprise alternative to OPA  
-✅ **Best Practices**: Clear messages, testing, version control
-
-### Key Takeaways
-
-1. **Shift-Left Security**: Catch issues before deployment
-2. **Declarative Policies**: Describe what should be true, not how
-3. **Test Everything**: Policies are code, treat them as such
-4. **Clear Communication**: Error messages should guide users
-5. **Flexible Enforcement**: Use appropriate levels for different policies
+✅ **Policy vs validation**: policies check the whole plan, from outside the configuration  
+✅ **Rego 1.x**: `if`, `contains`, `some ... in`, `every`; `opa fmt --v0-v1` for old code  
+✅ **The plan JSON**: `resource_changes`, `actions`, `before`/`after`, unknown values, units as written  
+✅ **Undefined**: the silent pass, and how to prevent it  
+✅ **Testing and linting**: `opa test`, exact message sets, coverage, Regal  
+✅ **Enforcement**: `deny`/`warn`, `--fail-defined` in CI; advisory and mandatory in HCP Terraform  
+✅ **OPA, Sentinel and Terraform policy**: what each is for
 
 ### What's Next?
 
-**Congratulations!** You've completed the TF-300 Advanced Terraform series. Continue to:
-
-- **PKR-100**: Packer Fundamentals - Build custom VM images
-- **Cloud Modules**: Apply your skills to AWS/Azure
-- **Production**: Implement policies in your organization
+- **TF-305**: Workspaces and Remote State
+- **TF-400**: HCP Terraform, where policy sets run on every run; **TF-404** covers Sentinel in depth
 
 ---
 
 **Course**: TF-300 Advanced Terraform  
 **Module**: TF-304 - Policy as Code (OPA/Rego)  
-**Duration**: 1 hour  
-**Last Updated**: 2026-02-26
+**Duration**: 1.5 hours  
+**Last Updated**: 2026-09-28

@@ -1,0 +1,23 @@
+# Backend validation: two backend blocks
+#
+# `terraform validate` catches this, without `terraform init`:
+#
+#   mkdir -p try && cp 5-duplicate-backend.tf.example try/main.tf
+#   terraform -chdir=try validate
+#
+#   Error: Duplicate 'backend' configuration block
+#     on main.tf line 18, in terraform:
+#     18:   backend "s3" {
+#   A module may have only one 'backend' configuration block. The backend was
+#   previously configured at main.tf:15,3-18.
+
+terraform {
+  backend "local" {
+    path = "terraform.tfstate"
+  }
+  backend "s3" {
+    bucket = "my-terraform-state"
+    key    = "terraform.tfstate"
+    region = "us-east-1"
+  }
+}

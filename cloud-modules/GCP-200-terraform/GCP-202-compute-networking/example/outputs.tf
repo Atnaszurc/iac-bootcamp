@@ -144,17 +144,17 @@ output "web_urls" {
 output "infrastructure_summary" {
   description = "Summary of created infrastructure"
   value = {
-    vpc_network      = google_compute_network.vpc.name
-    public_subnet    = google_compute_subnetwork.public.name
-    private_subnet   = google_compute_subnetwork.private.name
-    public_instances = length(google_compute_instance.public)
+    vpc_network       = google_compute_network.vpc.name
+    public_subnet     = google_compute_subnetwork.public.name
+    private_subnet    = google_compute_subnetwork.private.name
+    public_instances  = length(google_compute_instance.public)
     private_instances = length(google_compute_instance.private)
-    firewall_rules   = length([
+    firewall_rules = length([
       google_compute_firewall.allow_ssh,
       google_compute_firewall.allow_web,
       google_compute_firewall.allow_internal,
       google_compute_firewall.allow_health_checks
     ])
-    nat_enabled      = var.enable_nat
+    nat_enabled = var.enable_nat
   }
 }

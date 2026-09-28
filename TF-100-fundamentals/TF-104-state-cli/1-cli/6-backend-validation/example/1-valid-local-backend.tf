@@ -1,13 +1,12 @@
 terraform {
   required_version = ">= 1.15.0"
 
-  # Valid local backend configuration
+  # A valid backend configuration: state in a local file
   backend "local" {
     path = "terraform.tfstate"
   }
 }
 
-# Simple resource for testing
 resource "terraform_data" "example" {
   input = {
     message = "Backend validation example"

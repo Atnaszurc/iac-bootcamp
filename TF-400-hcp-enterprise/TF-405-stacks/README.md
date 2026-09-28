@@ -2,1001 +2,594 @@
 
 **Course**: TF-400 HCP Terraform & Enterprise Features  
 **Module**: TF-405  
-**Duration**: 1 hour  
+**Duration**: 1.5 hours  
 **Prerequisites**: TF-401 (HCP Terraform Fundamentals), TF-402 (Remote Runs & VCS Integration)  
 **Difficulty**: Expert  
-**Terraform Version**: 1.13+ (Stacks GA)  
-**Requires**: HCP Terraform (not available in open-source Terraform)
+**Terraform Version**: 1.13+ for the `terraform stacks` CLI (examples verified with 1.16.4 and 1.17.0-beta2)  
+**Requires**: HCP Terraform to deploy. Writing, validating and testing a Stack works locally.
 
 ---
 
 ## 📋 Table of Contents
 
-1. [⚠️ HCP Terraform Required](#️-hcp-terraform-required)
-2. [What Are Terraform Stacks?](#what-are-terraform-stacks)
-3. [Stacks vs Workspaces vs Separate Configurations](#stacks-vs-workspaces-vs-separate-configurations)
-4. [Core Concepts](#core-concepts)
-5. [File Types](#file-types)
-6. [Components](#components)
-7. [Deployments](#deployments)
-8. [The `terraform stacks` CLI](#the-terraform-stacks-cli)
-9. [Hands-On Walkthrough](#hands-on-walkthrough)
-10. [When to Use Stacks](#when-to-use-stacks)
-11. [Limitations and Considerations](#limitations-and-considerations)
-12. [🆕 New in Terraform 1.15: Stacks Improvements](#-new-in-terraform-115-stacks-improvements)
-13. [Checkpoint Quiz](#checkpoint-quiz)
-14. [Additional Resources](#additional-resources)
+1. [HCP Terraform and Cost](#-hcp-terraform-and-cost)
+2. [What Are Terraform Stacks?](#-what-are-terraform-stacks)
+3. [Stacks vs Workspaces](#-stacks-vs-workspaces)
+4. [Files of a Stack](#-files-of-a-stack)
+5. [Components](#-components)
+6. [Providers](#-providers)
+7. [Deployments](#-deployments)
+8. [The `terraform stacks` CLI](#-the-terraform-stacks-cli)
+9. [Hands-On](#-hands-on)
+10. [Building It Out](#-building-it-out)
+11. [Deployment Groups and Auto-Approval](#-deployment-groups-and-auto-approval)
+12. [Changes in Terraform 1.15 and 1.16](#-changes-in-terraform-115-and-116)
+13. [When to Use Stacks](#-when-to-use-stacks)
+14. [Checkpoint Quiz](#-checkpoint-quiz)
+15. [Additional Resources](#-additional-resources)
 
 ---
 
-## ⚠️ HCP Terraform Required
+## 💳 HCP Terraform and Cost
 
-> **This entire module requires HCP Terraform (app.terraform.io) and Terraform 1.13+.**
->
-> Terraform Stacks **cannot be used** with:
-> - Local backends (`terraform init` without a cloud block)
-> - Open-source Terraform CLI alone
-> - Terraform Enterprise (check your version — Stacks support varies)
->
-> If you do not have an HCP Terraform account, you can still complete this module conceptually — all examples and exercises are designed to be readable and understandable without running them. Sign up for a free HCP Terraform account at [app.terraform.io](https://app.terraform.io).
+Stacks run in **HCP Terraform** (and in Terraform Enterprise). The `terraform stacks` CLI can write, format and validate a Stack on your machine, but only HCP Terraform plans and applies it.
+
+HCP Terraform bills by **resources under management (RUM)**: every managed resource in state counts, in workspaces and Stacks alike. These don't count:
+
+- `terraform_data` and `null_resource`
+- data sources
+- locals, variables and outputs
+
+A Stack multiplies resources: every **deployment** has its own copy of every component. A Stack with 3 components of 10 resources each, deployed to 5 environments, is 150 resources.
+
+That's why the example in this module is deliberately tiny: **one billable resource per deployment** (a `random_pet`), everything else `terraform_data`, and two deployments. **2 resources under management in total**, and no cloud account needed. You add real infrastructure yourself in [Building It Out](#-building-it-out), knowing what each addition costs.
+
+> **Tiers**: According to HCP Terraform's documentation, Stacks are available on every edition, including Free (which is limited to 500 managed resources). Auto-approval rules for deployment groups need the Premium edition. Pricing changes; check the [pricing page](https://www.hashicorp.com/products/terraform/pricing) for your organisation.
 
 ---
 
 ## 🎯 What Are Terraform Stacks?
 
-**Terraform Stacks** (introduced in Terraform 1.13) is a new orchestration layer that allows you to manage **multiple Terraform configurations as a single coordinated unit**.
+A **Stack** deploys a set of Terraform modules (**components**) together, as one unit, and repeats that unit as many times as you need (**deployments**): per environment, region or account.
 
-Think of Stacks as a way to describe "I want this entire application deployed across these environments" — and have Terraform handle the coordination, ordering, and state management for all the pieces together.
+Without Stacks, deploying the same infrastructure to dev and prod means:
 
-### The Problem Stacks Solve
+- a workspace (or a configuration) per environment, sometimes per piece of infrastructure
+- passing outputs from one workspace to the next yourself (`terraform_remote_state`, run triggers)
+- a pipeline that applies things in the right order
 
-Without Stacks, deploying the same infrastructure to multiple environments (dev, staging, prod) requires:
-- Multiple separate Terraform configurations (or workspaces)
-- Manual coordination of apply order
-- Separate state files with no built-in relationship
-- Custom CI/CD pipelines to orchestrate the sequence
+With a Stack:
 
-With Stacks:
-- One Stack definition describes the entire deployment topology
-- Deployments (like workspaces) represent each environment instance
-- HCP Terraform orchestrates the apply order automatically
-- All deployments share the same component definitions
+- **one configuration** describes the components and how they connect
+- **deployments** say where and how often to deploy it, each with its own isolated state
+- HCP Terraform works out the order from the references between components
+- a change to the configuration creates a plan for **every** deployment
 
 ---
 
-## 🔄 Stacks vs Workspaces vs Separate Configurations
+## 🔄 Stacks vs Workspaces
 
-| Feature | Workspaces | Separate Configs | Stacks |
-|---------|-----------|-----------------|--------|
-| **Use case** | Same config, different state | Different configs | Multiple configs as a unit |
-| **Coordination** | Manual | Manual | Automatic |
-| **State** | One per workspace | One per config | One per component per deployment |
-| **Environments** | Good fit | Complex | Excellent fit |
-| **HCP required** | No | No | **Yes** |
-| **Terraform version** | Any | Any | 1.13+ |
-| **Complexity** | Low | Medium | High |
+| | Workspaces | Stacks |
+|---|---|---|
+| **Unit** | One root module | Several components (modules) together |
+| **Repeat for environments** | One workspace per environment | One deployment per environment, same configuration |
+| **Passing values between parts** | Remote state, run triggers | Component references: `component.naming.prefix` |
+| **Order of applies** | You arrange it | Inferred from references |
+| **State** | One per workspace | One per deployment |
+| **Where it runs** | Locally, any backend, or HCP Terraform | HCP Terraform (and Terraform Enterprise) |
+| **Policies** | Sentinel, OPA, Terraform policy | Terraform policy only (see TF-304) |
+| **Complexity** | Low | Higher |
 
-### When to Choose Each
+**Choose workspaces** for a single configuration, or when you don't use HCP Terraform.
+**Choose Stacks** when several pieces must be deployed together, repeatedly, and you're tired of wiring workspaces together.
+
+---
+
+## 📄 Files of a Stack
+
+| File | What it holds |
+|---|---|
+| `*.tfcomponent.hcl` | The **component configuration**: `required_providers`, `provider`, `variable`, `component`, `output`, `locals`, `removed`. Replaces the root module. Split it over as many files as you like. |
+| `*.tfdeploy.hcl` | The **deployment configuration**: `deployment`, `deployment_group`, `deployment_auto_approve`, `identity_token`, `store`, `publish_output`, `upstream_input`, `locals` |
+| `.terraform-version` | The Terraform version HCP Terraform uses for this Stack. Required. |
+| `.terraform.lock.hcl` | Provider lock file. Required: a Stack can't run without it. Commit it. |
+| `components/*/` | Ordinary Terraform modules, one per component |
+
+> **Older material uses `.tfstack.hcl`.** That was the extension during the Stacks beta. Since general availability, Stacks only read `.tfcomponent.hcl`; a `.tfstack.hcl` file is ignored. The beta's separate `tfstacks` CLI is replaced by `terraform stacks`, and `orchestrate` blocks by deployment groups. See [Update from beta to GA](https://developer.hashicorp.com/terraform/language/stacks/update-GA).
+
+The example:
 
 ```
-Workspaces:
-  ✅ Same infrastructure, different environments (dev/prod)
-  ✅ Simple variable differences between environments
-  ❌ Different infrastructure shapes per environment
-
-Separate Configurations:
-  ✅ Truly independent infrastructure pieces
-  ✅ Different teams own different configs
-  ❌ Need coordinated deployment across configs
-
-Stacks:
-  ✅ Multiple configs that must be deployed together
-  ✅ Same topology deployed to many regions/environments
-  ✅ Complex multi-component applications
-  ❌ Simple single-config deployments
-  ❌ No HCP Terraform access
+example/
+├── .terraform-version            # 1.16.4
+├── .terraform.lock.hcl           # generated by terraform stacks providers-lock
+├── variables.tfcomponent.hcl     # environment, owner, replicas
+├── providers.tfcomponent.hcl     # random + the built-in terraform provider
+├── components.tfcomponent.hcl    # naming → app
+├── outputs.tfcomponent.hcl       # prefix, instances
+├── deployments.tfdeploy.hcl      # dev, prod
+└── components/
+    ├── naming/                   # random_pet: 1 billable resource
+    │   ├── main.tf
+    │   └── tests/naming.tftest.hcl
+    └── app/                      # terraform_data: 0 billable resources
+        ├── main.tf
+        └── tests/app.tftest.hcl
 ```
 
 ---
 
-## 🧩 Core Concepts
+## 🧩 Components
 
-### Components
-
-A **Component** is a reference to a Terraform configuration (like a module). Components are the building blocks of a Stack — each component manages a piece of the infrastructure.
+A `component` block turns a module into part of the Stack: its source, its inputs, and the providers it gets.
 
 ```hcl
-# In a .tfstack.hcl file
-component "networking" {
-  source = "./networking"
+# components.tfcomponent.hcl
+
+component "naming" {
+  source = "./components/naming"
 
   inputs = {
-    region      = var.region
     environment = var.environment
   }
-}
-
-component "compute" {
-  source = "./compute"
-
-  inputs = {
-    vpc_id      = component.networking.vpc_id
-    environment = var.environment
-  }
-
-  # Explicit dependency — compute waits for networking
-  depends_on = [component.networking]
-}
-```
-
-### Deployments
-
-A **Deployment** is an instance of the Stack — like a workspace for the entire Stack. Each deployment gets its own state for each component.
-
-```hcl
-# In a .tfdeploy.hcl file
-deployment "dev" {
-  inputs = {
-    region      = "us-east-1"
-    environment = "dev"
-  }
-}
-
-deployment "staging" {
-  inputs = {
-    region      = "us-east-1"
-    environment = "staging"
-  }
-}
-
-deployment "prod" {
-  inputs = {
-    region      = "us-west-2"
-    environment = "prod"
-  }
-}
-```
-
-### Providers in Stacks
-
-Providers in Stacks are declared differently — they use a `provider` block at the Stack level and are passed into components:
-
-```hcl
-# Provider declaration in .tfstack.hcl
-provider "aws" "main" {
-  config {
-    region = var.region
-  }
-}
-
-component "networking" {
-  source = "./networking"
 
   providers = {
-    aws = provider.aws.main
+    random = provider.random.this
+  }
+}
+
+component "app" {
+  source = "./components/app"
+
+  # Referencing another component's output creates the dependency:
+  # naming is planned and applied first.
+  inputs = {
+    name_prefix = component.naming.prefix
+    environment = var.environment
+    owner       = var.owner
+    replicas    = var.replicas
   }
 
-  inputs = {
-    environment = var.environment
+  providers = {
+    terraform = provider.terraform.this
   }
+}
+```
+
+- **`inputs`** set the module's variables. `var.*` here are the Stack's variables (from `variables.tfcomponent.hcl`), which each deployment sets.
+- **`component.<name>.<output>`** reads another component's output. There's no `depends_on`: the reference is the dependency.
+- **The module itself** is a normal module: `variable`, `resource`, `output`. The only rule is that it doesn't configure providers (it may declare `required_providers`).
+- `component` also supports `for_each`, for example one component instance per region.
+
+Stack outputs work like root module outputs, but need a `type`:
+
+```hcl
+# outputs.tfcomponent.hcl
+
+output "prefix" {
+  type        = string
+  description = "The name prefix of this deployment"
+  value       = component.naming.prefix
 }
 ```
 
 ---
 
-## 📄 File Types
+## 🔌 Providers
 
-Stacks introduce two new file types:
-
-### `.tfstack.hcl` — Stack Definition
-
-Defines the **components** (what to deploy) and **providers** for the Stack:
-
-```
-my-stack/
-├── stack.tfstack.hcl      # Components and providers
-├── variables.tfstack.hcl  # Stack-level input variables
-└── outputs.tfstack.hcl    # Stack-level outputs
-```
-
-### `.tfdeploy.hcl` — Deployment Configuration
-
-Defines the **deployments** (where/how to deploy the Stack):
-
-```
-my-stack/
-└── deployments.tfdeploy.hcl   # Deployment instances
-```
-
-### Example Stack Structure
-
-```
-my-application-stack/
-├── stack.tfstack.hcl          # Components: networking, compute, database
-├── variables.tfstack.hcl      # region, environment, instance_type
-├── outputs.tfstack.hcl        # app_url, database_endpoint
-├── deployments.tfdeploy.hcl   # dev, staging, prod deployments
-│
-├── networking/                # Component: VPC, subnets, security groups
-│   ├── main.tf
-│   ├── variables.tf
-│   └── outputs.tf
-│
-├── compute/                   # Component: EC2 instances, load balancer
-│   ├── main.tf
-│   ├── variables.tf
-│   └── outputs.tf
-│
-└── database/                  # Component: RDS instance
-    ├── main.tf
-    ├── variables.tf
-    └── outputs.tf
-```
-
----
-
-## 🔧 Components
-
-### Full Component Example
+Providers in a Stack are different from providers in a normal configuration:
 
 ```hcl
-# stack.tfstack.hcl
+# providers.tfcomponent.hcl
 
-# Stack-level variables
-variable "region" {
-  type = string
-}
+required_providers {
+  random = {
+    source  = "hashicorp/random"
+    version = "~> 3.7"
+  }
 
-variable "environment" {
-  type = string
-}
-
-# Provider
-provider "aws" "main" {
-  config {
-    region = var.region
+  # The built-in provider that terraform_data belongs to. In a normal
+  # configuration it's implicit; a Stack must declare it and pass it on.
+  terraform = {
+    source = "terraform.io/builtin/terraform"
   }
 }
 
-# Component 1: Networking (no dependencies)
-component "networking" {
-  source = "./networking"
-
-  providers = {
-    aws = provider.aws.main
-  }
-
-  inputs = {
-    environment = var.environment
-    vpc_cidr    = "10.0.0.0/16"
-  }
+provider "random" "this" {
+  config {}
 }
 
-# Component 2: Database (depends on networking)
-component "database" {
-  source = "./database"
-
-  providers = {
-    aws = provider.aws.main
-  }
-
-  inputs = {
-    environment = var.environment
-    subnet_ids  = component.networking.private_subnet_ids
-    vpc_id      = component.networking.vpc_id
-  }
-}
-
-# Component 3: Compute (depends on networking and database)
-component "compute" {
-  source = "./compute"
-
-  providers = {
-    aws = provider.aws.main
-  }
-
-  inputs = {
-    environment     = var.environment
-    subnet_ids      = component.networking.public_subnet_ids
-    db_endpoint     = component.database.endpoint
-    db_secret_arn   = component.database.secret_arn
-  }
+provider "terraform" "this" {
+  config {}
 }
 ```
 
-### Component Outputs
-
-Components expose outputs that other components can reference:
-
-```hcl
-# In networking/outputs.tf (standard Terraform output)
-output "vpc_id" {
-  value = aws_vpc.main.id
-}
-
-output "private_subnet_ids" {
-  value = aws_subnet.private[*].id
-}
-
-# In stack.tfstack.hcl — reference component outputs
-component "compute" {
-  inputs = {
-    vpc_id     = component.networking.vpc_id      # ← component output reference
-    subnet_ids = component.networking.private_subnet_ids
-  }
-}
-```
+- **One `required_providers` block per Stack**, at the top level. A second one is an error; add new providers to the existing block.
+- **The alias is in the block header**: `provider "random" "this"`. Components refer to it as `provider.random.this`.
+- **Arguments go in a `config` block.** `random` has none, so `config {}` is empty; an AWS provider would put `region` and its authentication there.
+- **Components get providers explicitly**, through `providers = { ... }`. Nothing is inherited.
+- **`terraform_data` needs the built-in `terraform` provider**, declared and passed like any other. Without it, validation fails with *"The root module for component.app requires a provider configuration named "terraform" for provider "terraform.io/builtin/terraform""*. Most documentation examples don't mention it, because they only use cloud providers.
+- `provider` blocks support `for_each`, for a provider configuration per region.
 
 ---
 
 ## 🚀 Deployments
 
-### Full Deployment Example
-
 ```hcl
 # deployments.tfdeploy.hcl
 
 deployment "dev" {
   inputs = {
-    region      = "us-east-1"
     environment = "dev"
+    owner       = "platform"
   }
-}
-
-deployment "staging" {
-  inputs = {
-    region      = "us-east-1"
-    environment = "staging"
-  }
-}
-
-deployment "prod-us" {
-  inputs = {
-    region      = "us-east-1"
-    environment = "prod"
-  }
-}
-
-deployment "prod-eu" {
-  inputs = {
-    region      = "eu-west-1"
-    environment = "prod"
-  }
-}
-```
-
-### Deployment with Identity Tokens (OIDC)
-
-For production use, deployments use identity tokens for dynamic provider credentials:
-
-```hcl
-# deployments.tfdeploy.hcl
-
-identity_token "aws" {
-  audience = ["aws.workload.identity"]
 }
 
 deployment "prod" {
   inputs = {
-    region      = "us-east-1"
     environment = "prod"
-
-    # Pass OIDC token for dynamic AWS credentials
-    aws_role_arn = "arn:aws:iam::123456789012:role/terraform-stacks-role"
+    owner       = "platform"
+    replicas    = 2
   }
 }
 ```
+
+Each `deployment` block is one copy of the whole Stack, with its own inputs and its own state. A Stack can have up to 20 deployments.
+
+Other blocks in `.tfdeploy.hcl` files:
+
+- **`identity_token`**: an OIDC token for a cloud provider, so no credentials are stored (see [Building It Out](#-building-it-out))
+- **`store "varset"`**: read values from an HCP Terraform variable set
+- **`deployment_group`** and **`deployment_auto_approve`**: auto-approval rules (see [Deployment Groups](#-deployment-groups-and-auto-approval))
+- **`publish_output`** and **`upstream_input`**: pass values from one Stack to another in the same project
+- **`destroy = true`** in a `deployment` block: destroy that deployment's infrastructure
 
 ---
 
 ## 💻 The `terraform stacks` CLI
 
-> **Important**: The `terraform stacks` commands require HCP Terraform. They will not work with a local backend.
+The `terraform stacks` commands are part of the Terraform CLI since 1.13 (Terraform downloads a Stacks plugin the first time you use them).
+
+**Local, no HCP Terraform needed:**
 
 ```bash
-# Validate stack configuration
-terraform stacks validate
-
-# Plan all deployments in the stack
-terraform stacks plan
-
-# Plan a specific deployment
-terraform stacks plan -deployment=dev
-
-# Apply all deployments
-terraform stacks apply
-
-# Apply a specific deployment
-terraform stacks apply -deployment=prod
-
-# Show stack status
-terraform stacks show
-
-# List all deployments
-terraform stacks deployments list
+terraform stacks init            # download providers and modules
+terraform stacks providers-lock  # write .terraform.lock.hcl (for HCP Terraform's linux_amd64 and your machine)
+terraform stacks validate        # check the configuration
+terraform stacks fmt             # format .tfcomponent.hcl and .tfdeploy.hcl files
 ```
 
-### Typical Stacks Workflow
+**Against HCP Terraform** (after `terraform login`):
 
 ```bash
-# 1. Authenticate with HCP Terraform
-terraform login
-
-# 2. Validate the stack definition
-terraform stacks validate
-
-# 3. Plan changes (shows all deployments)
-terraform stacks plan
-
-# 4. Review the plan output
-# HCP Terraform shows a plan per component per deployment
-
-# 5. Apply (with approval in HCP Terraform UI or CLI)
-terraform stacks apply
+terraform stacks create -organization-name=ORG -project-name=PROJECT -stack-name=NAME
+terraform stacks configuration upload   # upload this directory; starts a run per deployment
+terraform stacks deployment-run list    # runs and their status
+terraform stacks deployment-run approve-all-plans
+terraform stacks list                   # Stacks in the organisation or project
 ```
+
+The commands that target a Stack take `-organization-name`, `-project-name` and `-stack-name`, or read them from `TF_STACKS_ORGANIZATION_NAME`, `TF_STACKS_PROJECT_NAME` and `TF_STACKS_STACK_NAME`. You can also connect the Stack to a VCS repository instead of uploading.
+
+There is no `terraform stacks plan` or `apply`: HCP Terraform plans every deployment when a configuration arrives, and applies what you approve.
 
 ---
 
-## 🔬 Hands-On Walkthrough
+## 🔬 Hands-On
 
-> **Prerequisites**: HCP Terraform account with Stacks enabled. Stacks may require a specific HCP Terraform tier — check the [HCP Terraform pricing page](https://www.hashicorp.com/products/terraform/pricing).
+### Part 1: Local (no HCP Terraform, no cost)
 
-### Exercise: Conceptual Stack Design
+```bash
+cd example
 
-Even without HCP Terraform access, you can practice designing a Stack. Consider this scenario:
-
-**Scenario**: You manage a web application that needs to be deployed to `dev`, `staging`, and `prod` environments. Each environment needs:
-- A VPC with public and private subnets
-- An EC2 instance running the application
-- An RDS database
-
-**Design the Stack**:
-
-1. **Identify the components**:
-   - `networking` — VPC, subnets, security groups
-   - `compute` — EC2 instance, load balancer
-   - `database` — RDS instance
-
-2. **Identify the dependencies**:
-   - `compute` depends on `networking` (needs VPC/subnet IDs)
-   - `database` depends on `networking` (needs VPC/subnet IDs)
-   - `compute` depends on `database` (needs DB endpoint)
-
-3. **Identify the deployments**:
-   - `dev` — us-east-1, t3.micro instances
-   - `staging` — us-east-1, t3.small instances
-   - `prod` — us-east-1 + eu-west-1, t3.medium instances
-
-4. **Sketch the `.tfstack.hcl`**:
-
-```hcl
-# Conceptual stack.tfstack.hcl
-
-variable "region"        { type = string }
-variable "environment"   { type = string }
-variable "instance_type" { type = string }
-
-provider "aws" "main" {
-  config { region = var.region }
-}
-
-component "networking" {
-  source    = "./networking"
-  providers = { aws = provider.aws.main }
-  inputs    = { environment = var.environment }
-}
-
-component "database" {
-  source    = "./database"
-  providers = { aws = provider.aws.main }
-  inputs = {
-    environment = var.environment
-    subnet_ids  = component.networking.private_subnet_ids
-    vpc_id      = component.networking.vpc_id
-  }
-}
-
-component "compute" {
-  source    = "./compute"
-  providers = { aws = provider.aws.main }
-  inputs = {
-    environment   = var.environment
-    instance_type = var.instance_type
-    subnet_ids    = component.networking.public_subnet_ids
-    db_endpoint   = component.database.endpoint
-  }
-}
+terraform stacks init
+terraform stacks providers-lock
+terraform stacks validate
+# Success! Terraform Stacks configuration is valid and ready for use within HCP Terraform.
 ```
 
-5. **Sketch the `.tfdeploy.hcl`**:
+Components are ordinary modules, so you can test them the ordinary way:
+
+```bash
+cd components/app
+terraform init
+terraform test
+# Success! 2 passed, 0 failed.
+```
+
+Now break things, one at a time, and run `terraform stacks validate` after each:
+
+1. Remove the `providers` argument from `component "app"`. What does the error say, and why does `terraform_data` need a provider at all?
+2. Rename `components.tfcomponent.hcl` to `components.tfstack.hcl` (the beta extension). What happens to `component.naming` references?
+3. Add `provider "random" {}` to `components/naming/main.tf`.
+4. In `deployments.tfdeploy.hcl`, set `environment = "qa"` for `dev`.
+
+<details>
+<summary>What you should see</summary>
+
+1. *Missing required provider configuration*: the module uses `terraform_data`, which belongs to the built-in `terraform` provider, and in a Stack every provider is passed explicitly.
+2. *Reference to undeclared component*: the file is no longer read, so `component "naming"` doesn't exist, and the outputs that reference it fail.
+3. *Inline provider configuration not allowed*: a component module gets all its providers from the Stack. (You may also see an internal error about an "unconfigured provider" next to it; the inline provider is the cause.)
+4. **Nothing**: `validate` passes. It checks the configuration, not the values deployments pass in. The `validation` rule on `var.environment` is checked when HCP Terraform plans the deployment. Local validation isn't a substitute for looking at the plans.
+
+</details>
+
+### Part 2: Deploy to HCP Terraform (2 resources under management)
+
+1. Log in and create the Stack (or create it in the UI: **Projects → New → Stack**):
+   ```bash
+   terraform login
+   export TF_STACKS_ORGANIZATION_NAME=<your org>
+   export TF_STACKS_PROJECT_NAME=<your project>
+   export TF_STACKS_STACK_NAME=tf405
+   terraform stacks create -organization-name=$TF_STACKS_ORGANIZATION_NAME \
+     -project-name=$TF_STACKS_PROJECT_NAME -stack-name=$TF_STACKS_STACK_NAME
+   ```
+2. Upload the configuration:
+   ```bash
+   terraform stacks configuration upload
+   ```
+3. In the HCP Terraform UI, open the Stack: there's a plan for `dev` and one for `prod`. Look at the order: `naming` first, then `app`. Approve both (or `terraform stacks deployment-run approve-all-plans`).
+4. Look at each deployment's outputs: different prefixes, and `prod` has two instances.
+5. Change `owner` for `prod` only, and upload again. Which deployments get a plan with changes? Which components change?
+6. Check **Usage** in your organisation settings: the Stack adds 2 managed resources.
+
+### Part 3: Clean up
+
+Destroy the deployments **before** you delete the Stack; deleting a Stack leaves its resources behind, unmanaged.
+
+1. Add `destroy = true` to both `deployment` blocks and upload. Approve the destroy plans.
+2. Delete the Stack: the project's **Settings → Destruction and Deletion → Delete stack**.
+
+---
+
+## 🏗️ Building It Out
+
+The example is small on purpose. Add real infrastructure deliberately, one resource at a time, and count what each addition costs you: **every billable resource times every deployment**.
+
+### Example: an S3 bucket per deployment (+1 resource per deployment)
+
+This needs an AWS account, and an IAM role that trusts HCP Terraform's OIDC tokens. The [Authenticate a Stack](https://developer.hashicorp.com/terraform/language/stacks/deploy/authenticate) page has a complete Terraform configuration that creates that role; run it once in a workspace or locally.
+
+1. A new component, `components/bucket/main.tf`:
+   ```hcl
+   terraform {
+     required_providers {
+       aws = {
+         source  = "hashicorp/aws"
+         version = "~> 6.0"
+       }
+     }
+   }
+
+   variable "name_prefix" {
+     type = string
+   }
+
+   resource "aws_s3_bucket" "this" {
+     bucket_prefix = "${var.name_prefix}-"
+     force_destroy = true
+   }
+
+   output "bucket" {
+     value = aws_s3_bucket.this.bucket
+   }
+   ```
+2. Add `aws` to the **existing** `required_providers` block in `providers.tfcomponent.hcl`:
+   ```hcl
+     aws = {
+       source  = "hashicorp/aws"
+       version = "~> 6.0"
+     }
+   ```
+3. A new file, `aws.tfcomponent.hcl`: the provider, its inputs, the component and an output:
+   ```hcl
+   variable "aws_region" {
+     type    = string
+     default = "eu-north-1"
+   }
+
+   variable "aws_role_arn" {
+     type = string
+   }
+
+   variable "aws_token" {
+     type      = string
+     ephemeral = true
+   }
+
+   provider "aws" "this" {
+     config {
+       region = var.aws_region
+       assume_role_with_web_identity {
+         role_arn           = var.aws_role_arn
+         web_identity_token = var.aws_token
+       }
+     }
+   }
+
+   component "bucket" {
+     source = "./components/bucket"
+
+     inputs = {
+       name_prefix = component.naming.prefix
+     }
+
+     providers = {
+       aws = provider.aws.this
+     }
+   }
+
+   output "bucket" {
+     type  = string
+     value = component.bucket.bucket
+   }
+   ```
+4. In `deployments.tfdeploy.hcl`, an identity token, passed to every deployment:
+   ```hcl
+   identity_token "aws" {
+     audience = ["aws.workload.identity"]
+   }
+
+   locals {
+     aws_role_arn = "arn:aws:iam::123456789012:role/stacks-my-org-my-project-tf405"
+   }
+
+   deployment "dev" {
+     inputs = {
+       environment  = "dev"
+       owner        = "platform"
+       aws_role_arn = local.aws_role_arn
+       aws_token    = identity_token.aws.jwt
+     }
+   }
+   # ...and the same two inputs for prod
+   ```
+5. `terraform stacks init`, `terraform stacks providers-lock` (the lock file now includes `aws`), `terraform stacks validate`, and upload.
+
+The Stack is now at 4 resources under management (2 per deployment), and 2 real S3 buckets. `force_destroy = true` lets the destroy step remove buckets that still have objects in them.
+
+Other ways to grow it, cheapest first:
+
+- More `terraform_data` in `app` (free): model your application's configuration before paying for anything.
+- A third deployment (`staging`): +1 resource, or +2 with the bucket.
+- `for_each` on `component "bucket"` over a list of regions, with `provider "aws"` `for_each` too: +1 resource per region per deployment.
+
+---
+
+## 🚦 Deployment Groups and Auto-Approval
+
+> Running auto-approval rules needs the HCP Terraform **Premium** edition.
+
+By default, every deployment run waits for approval (except plans with no changes: the built-in `empty_plan` rule). With deployment groups you can approve some plans automatically:
 
 ```hcl
-# Conceptual deployments.tfdeploy.hcl
+# deployments.tfdeploy.hcl
+
+deployment_auto_approve "no_destroys" {
+  check {
+    condition = context.plan.changes.remove == 0
+    reason    = "Plan removes ${context.plan.changes.remove} resources."
+  }
+}
+
+deployment_group "dev" {
+  auto_approve_checks = [deployment_auto_approve.no_destroys]
+}
 
 deployment "dev" {
   inputs = {
-    region        = "us-east-1"
-    environment   = "dev"
-    instance_type = "t3.micro"
+    environment = "dev"
+    owner       = "platform"
   }
-}
-
-deployment "staging" {
-  inputs = {
-    region        = "us-east-1"
-    environment   = "staging"
-    instance_type = "t3.small"
-  }
-}
-
-deployment "prod-us" {
-  inputs = {
-    region        = "us-east-1"
-    environment   = "prod"
-    instance_type = "t3.medium"
-  }
-}
-
-deployment "prod-eu" {
-  inputs = {
-    region        = "eu-west-1"
-    environment   = "prod"
-    instance_type = "t3.medium"
-  }
+  deployment_group = deployment_group.dev
 }
 ```
+
+Here, `dev` plans are approved automatically unless they destroy something. A deployment group holds one deployment for now. A deployment without a group gets a default group, which can't have custom rules.
+
+These replace the beta's `orchestrate "auto_approve"` blocks.
+
+---
+
+## 🆕 Changes in Terraform 1.15 and 1.16
+
+From the Terraform changelogs:
+
+**1.15**
+- **Input variable validation for Stacks** ([#38240](https://github.com/hashicorp/terraform/issues/38240)): `validation` blocks on Stack variables, like the one on `environment` in the example. As Part 1 shows, `terraform stacks validate` doesn't check deployment values against them; HCP Terraform does when it plans.
+- **Progress events for failed plans** ([#38039](https://github.com/hashicorp/terraform/issues/38039)): when a plan fails, HCP Terraform still shows which components were planned.
+- **No-op reporting** ([#38049](https://github.com/hashicorp/terraform/issues/38049)): components without changes report a no-op plan and apply, which fixes confusing displays for destroy plans.
+- Output values are included in plan descriptions of component instances ([#38360](https://github.com/hashicorp/terraform/issues/38360)).
+
+**1.16**
+- `terraform stacks` finds your HCP Terraform hostname from `terraform login` credentials when `TF_STACKS_HOSTNAME` isn't set ([#38896](https://github.com/hashicorp/terraform/issues/38896)).
+- Validation checks that the lock file's provider versions match the configuration ([#38829](https://github.com/hashicorp/terraform/issues/38829)).
+- Actions in Stacks get the `caller` symbol (see TF-307).
 
 ---
 
 ## ✅ When to Use Stacks
 
-### Good Use Cases
-
-- **Multi-region deployments**: Same application deployed to multiple AWS regions
-- **Multi-environment pipelines**: dev → staging → prod with coordinated promotion
-- **Platform teams**: Providing a "golden path" stack that product teams deploy
-- **Complex applications**: Multiple interdependent Terraform configurations
-- **Large-scale infrastructure**: Many environments that need consistent management
-
-### Not a Good Fit
-
-- **Simple single-config deployments**: Workspaces are simpler and sufficient
-- **No HCP Terraform**: Stacks require HCP Terraform
-- **Independent teams**: If teams own separate configs with no coordination needed
-- **Learning Terraform**: Master core Terraform first (TF-100 through TF-400)
-
----
-
-## ⚠️ Limitations and Considerations
-
-1. **HCP Terraform required**: Stacks are not available in open-source Terraform or Terraform Enterprise (check your version)
-
-2. **Terraform 1.13+**: Stacks were GA in Terraform 1.13 — ensure your HCP Terraform organization uses a compatible version
-
-3. **New file types**: `.tfstack.hcl` and `.tfdeploy.hcl` are not valid in regular Terraform configurations — they are Stack-specific
-
-4. **Provider configuration**: Providers in Stacks are declared differently than in regular Terraform — the `provider` block syntax is Stack-specific
-
-5. **State management**: Each component in each deployment has its own state — this is more granular than workspaces
-
-6. **Learning curve**: Stacks add significant complexity. Only adopt them when the coordination benefits outweigh the complexity cost
-
-7. **Pricing**: Stacks may require a specific HCP Terraform tier — verify with HashiCorp's current pricing
-
----
-
-## 🆕 New in Terraform 1.15: Stacks Improvements
-
-Terraform 1.15 introduced several important improvements to Terraform Stacks that enhance the user experience and reliability:
-
-### 1. Progress Events for Failed Plans
-
-**What Changed**: Stacks now send progress events even when a plan fails, providing better UI integration and visibility into what went wrong.
-
-**Why It Matters**: Previously, if a Stack plan failed, you might not get detailed progress information about which components succeeded before the failure. Now, HCP Terraform's UI can show you exactly where the failure occurred in the component dependency chain.
-
-**Example Scenario**:
-
-```hcl
-# stack.tfstack.hcl
-component "networking" {
-  source = "./networking"
-  inputs = {
-    vpc_cidr = var.vpc_cidr
-  }
-}
-
-component "database" {
-  source = "./database"
-  inputs = {
-    vpc_id = component.networking.vpc_id
-    # This might fail due to invalid configuration
-    instance_class = "invalid.instance.type"
-  }
-}
-
-component "compute" {
-  source = "./compute"
-  inputs = {
-    vpc_id      = component.networking.vpc_id
-    db_endpoint = component.database.endpoint
-  }
-}
-```
-
-**Before Terraform 1.15**:
-- Plan fails on `database` component
-- Limited visibility into which components completed successfully
-- Harder to debug in the HCP Terraform UI
-
-**After Terraform 1.15**:
-- Plan fails on `database` component
-- Progress events show that `networking` completed successfully
-- Clear indication that `database` failed and `compute` was not attempted
-- Better UI integration showing the exact failure point
-
-**Best Practice**: When debugging Stack failures, check the HCP Terraform UI for the detailed progress events to understand the component execution order and failure point.
-
----
-
-### 2. No-Op Plan/Apply Reporting
-
-**What Changed**: Component instances now properly report when they have no changes (no-op operations), improving UI consistency especially with convergence destroy plans.
-
-**Why It Matters**: This solves a UI inconsistency where components with no changes weren't clearly indicated, making it harder to understand the overall Stack state.
-
-**Example Scenario**:
-
-```hcl
-# deployments.tfdeploy.hcl
-deployment "dev" {
-  inputs = {
-    region      = "us-east-1"
-    environment = "dev"
-  }
-}
-
-deployment "staging" {
-  inputs = {
-    region      = "us-east-1"
-    environment = "staging"
-  }
-}
-```
-
-**Scenario**: You update only the `dev` deployment's configuration:
-
-```bash
-# Plan the Stack
-terraform stacks plan
-```
-
-**Before Terraform 1.15**:
-- Components in `staging` deployment might not clearly show "no changes"
-- UI could be confusing about which deployments/components are affected
-- Convergence destroy plans had inconsistent reporting
-
-**After Terraform 1.15**:
-- Components with no changes explicitly report as "no-op"
-- Clear distinction between:
-  - Components with changes
-  - Components with no changes (no-op)
-  - Components not yet planned
-- Convergence destroy plans show consistent no-op reporting
-
-**Example Output**:
-```
-Planning Stack...
-
-Deployment: dev
-  Component: networking - 2 to add, 1 to change, 0 to destroy
-  Component: database   - 0 to add, 1 to change, 0 to destroy
-  Component: compute    - 0 to add, 0 to change, 0 to destroy (no-op)
-
-Deployment: staging
-  Component: networking - 0 to add, 0 to change, 0 to destroy (no-op)
-  Component: database   - 0 to add, 0 to change, 0 to destroy (no-op)
-  Component: compute    - 0 to add, 0 to change, 0 to destroy (no-op)
-```
-
-**Best Practice**: Use the no-op indicators to quickly identify which deployments and components are affected by your changes, making it easier to review large Stack plans.
-
----
-
-### 3. Input Variable Validation for Stacks
-
-**What Changed**: Terraform 1.15 adds support for input variable validation in Stack configurations, bringing the same validation capabilities available in regular Terraform to Stacks.
-
-**Why It Matters**: You can now enforce constraints on Stack-level variables, catching configuration errors early before deployment.
-
-**Syntax**:
-
-```hcl
-# variables.tfstack.hcl
-
-variable "environment" {
-  type        = string
-  description = "Deployment environment"
-
-  validation {
-    condition     = contains(["dev", "staging", "prod"], var.environment)
-    error_message = "Environment must be dev, staging, or prod."
-  }
-}
-
-variable "region" {
-  type        = string
-  description = "AWS region for deployment"
-
-  validation {
-    condition     = can(regex("^(us|eu|ap)-(east|west|central|south|north|northeast|southeast)-[1-9]$", var.region))
-    error_message = "Region must be a valid AWS region format (e.g., us-east-1, eu-west-2)."
-  }
-}
-
-variable "instance_count" {
-  type        = number
-  description = "Number of instances to deploy"
-  default     = 2
-
-  validation {
-    condition     = var.instance_count >= 1 && var.instance_count <= 10
-    error_message = "Instance count must be between 1 and 10."
-  }
-}
-
-variable "vpc_cidr" {
-  type        = string
-  description = "VPC CIDR block"
-
-  validation {
-    condition     = can(cidrhost(var.vpc_cidr, 0))
-    error_message = "VPC CIDR must be a valid IPv4 CIDR block."
-  }
-}
-```
-
-**Using Validated Variables in Deployments**:
-
-```hcl
-# deployments.tfdeploy.hcl
-
-deployment "dev" {
-  inputs = {
-    environment    = "dev"           # ✅ Valid
-    region         = "us-east-1"     # ✅ Valid
-    instance_count = 2               # ✅ Valid
-    vpc_cidr       = "10.0.0.0/16"   # ✅ Valid
-  }
-}
-
-deployment "invalid-example" {
-  inputs = {
-    environment    = "production"    # ❌ Fails validation - not in allowed list
-    region         = "invalid-region" # ❌ Fails validation - invalid format
-    instance_count = 15              # ❌ Fails validation - exceeds maximum
-    vpc_cidr       = "not-a-cidr"    # ❌ Fails validation - invalid CIDR
-  }
-}
-```
-
-**Validation Error Example**:
-
-```bash
-$ terraform stacks validate
-
-Error: Invalid value for variable
-
-  on deployments.tfdeploy.hcl line 15, in deployment "invalid-example":
-  15:     environment = "production"
-
-Environment must be dev, staging, or prod.
-
-Error: Invalid value for variable
-
-  on deployments.tfdeploy.hcl line 16, in deployment "invalid-example":
-  16:     region = "invalid-region"
-
-Region must be a valid AWS region format (e.g., us-east-1, eu-west-2).
-```
-
-**Advanced Validation Examples**:
-
-```hcl
-# Cross-variable validation
-variable "enable_multi_az" {
-  type    = bool
-  default = false
-}
-
-variable "availability_zones" {
-  type = list(string)
-
-  validation {
-    condition = (
-      !var.enable_multi_az ||
-      length(var.availability_zones) >= 2
-    )
-    error_message = "When enable_multi_az is true, at least 2 availability zones must be specified."
-  }
-}
-
-# Complex validation with multiple conditions
-variable "instance_type" {
-  type = string
-
-  validation {
-    condition = (
-      can(regex("^t[2-3]\\.", var.instance_type)) ||
-      can(regex("^m[5-6]\\.", var.instance_type)) ||
-      can(regex("^c[5-6]\\.", var.instance_type))
-    )
-    error_message = "Instance type must be from t2, t3, m5, m6, c5, or c6 families."
-  }
-}
-
-# Validation with environment-specific rules
-variable "backup_retention_days" {
-  type = number
-
-  validation {
-    condition = (
-      (var.environment == "prod" && var.backup_retention_days >= 30) ||
-      (var.environment != "prod" && var.backup_retention_days >= 7)
-    )
-    error_message = "Production requires 30+ days retention, non-production requires 7+ days."
-  }
-}
-```
-
-**Best Practices for Stack Variable Validation**:
-
-1. **Validate Early**: Add validation rules to catch errors before deployment
-2. **Clear Error Messages**: Provide helpful error messages that explain what's wrong and how to fix it
-3. **Environment-Specific Rules**: Use validation to enforce different requirements for dev vs prod
-4. **Format Validation**: Validate formats (CIDR blocks, regions, etc.) to prevent typos
-5. **Range Validation**: Enforce reasonable limits on numeric values
-6. **Dependency Validation**: Validate that related variables are consistent with each other
-
-**Common Validation Patterns**:
-
-```hcl
-# Enum validation (allowed values)
-validation {
-  condition     = contains(["small", "medium", "large"], var.size)
-  error_message = "Size must be small, medium, or large."
-}
-
-# Regex pattern matching
-validation {
-  condition     = can(regex("^[a-z0-9-]+$", var.name))
-  error_message = "Name must contain only lowercase letters, numbers, and hyphens."
-}
-
-# Numeric range
-validation {
-  condition     = var.port >= 1024 && var.port <= 65535
-  error_message = "Port must be between 1024 and 65535."
-}
-
-# CIDR validation
-validation {
-  condition     = can(cidrhost(var.cidr, 0))
-  error_message = "Must be a valid CIDR block."
-}
-
-# List length validation
-validation {
-  condition     = length(var.tags) <= 50
-  error_message = "Maximum of 50 tags allowed."
-}
-
-# Conditional validation
-validation {
-  condition = (
-    !var.enable_feature ||
-    var.feature_config != null
-  )
-  error_message = "feature_config is required when enable_feature is true."
-}
-```
-
----
-
-### Summary of Terraform 1.15 Stacks Improvements
-
-| Feature | Benefit | Use Case |
-|---------|---------|----------|
-| **Progress Events on Failure** | Better debugging and UI visibility | Understanding which components succeeded before a failure |
-| **No-Op Reporting** | Clearer plan output and UI consistency | Quickly identifying affected components in large Stacks |
-| **Input Variable Validation** | Early error detection and enforcement | Preventing invalid configurations before deployment |
-
-**Migration Notes**:
-
-- These improvements are **backward compatible** — existing Stacks work without changes
-- Variable validation is **optional** — add it incrementally to existing Stacks
-- Progress events and no-op reporting are **automatic** — no configuration needed
-
-**Recommended Actions**:
-
-1. **Add Variable Validation**: Review your Stack variables and add validation rules for critical inputs
-2. **Update Documentation**: Document the validation rules so deployment authors understand the constraints
-3. **Test Validation**: Create test deployments with invalid values to verify your validation rules work correctly
-4. **Monitor Progress Events**: Use the improved progress events in HCP Terraform UI to debug plan failures more effectively
+**Good fit:**
+- The same set of components deployed to several environments, regions or accounts
+- Components that depend on each other's outputs, and must be applied in order
+- A platform team offering a standard Stack that product teams deploy
+
+**Not a good fit:**
+- A single configuration: a workspace is simpler
+- No HCP Terraform (or Terraform Enterprise)
+- Workspaces that rely on Sentinel or OPA policy sets: those don't apply to Stacks (Terraform policy does)
+- Learning Terraform: master modules, state and workspaces first
 
 ---
 
 ## 📝 Checkpoint Quiz
 
 ### Question 1: What is a Terraform Stack?
-**What is the primary purpose of Terraform Stacks?**
 
-A) A replacement for Terraform modules  
-B) A way to manage multiple Terraform configurations as a coordinated unit  
-C) A new type of Terraform state file  
-D) A replacement for workspaces in all scenarios
+A) A way to stack multiple providers in one configuration  
+B) A set of components (modules) deployed together, repeated as deployments, orchestrated by HCP Terraform  
+C) A replacement for Terraform modules  
+D) A CI/CD pipeline for Terraform
 
 <details>
-<summary>Click to reveal answer</summary>
+<summary>Show Answer</summary>
 
-**Answer: B) A way to manage multiple Terraform configurations as a coordinated unit**
+**B.** Components are ordinary modules; the Stack connects them and HCP Terraform deploys the whole set once per deployment.
 
-Stacks allow you to define multiple components (Terraform configurations) and deploy them together as a unit across multiple deployments (environments/regions), with HCP Terraform handling the coordination.
 </details>
 
 ---
 
-### Question 2: File Types
-**Which file type defines the components and providers in a Terraform Stack?**
+### Question 2: File types
 
-A) `.tfstack.hcl`  
-B) `.tfdeploy.hcl`  
-C) `.tfvars`  
-D) `.tfmodule.hcl`
+**Which file extensions does a Stack use since general availability?**
 
 <details>
-<summary>Click to reveal answer</summary>
+<summary>Show Answer</summary>
 
-**Answer: A) `.tfstack.hcl`**
+`.tfcomponent.hcl` for the component configuration (components, providers, variables, outputs) and `.tfdeploy.hcl` for the deployment configuration. `.tfstack.hcl` was the beta extension and is no longer read.
 
-- `.tfstack.hcl` — defines components, providers, and Stack-level variables/outputs
-- `.tfdeploy.hcl` — defines deployments (instances of the Stack)
 </details>
 
 ---
 
-### Question 3: Requirements
-**What is required to use Terraform Stacks?**
+### Question 3: Providers
 
-A) Terraform 1.10+ and any backend  
-B) HCP Terraform and Terraform 1.13+  
-C) Terraform Enterprise only  
-D) Any Terraform version with a remote backend
+**A component module uses only `terraform_data`. Does its `component` block need a `providers` argument?**
 
 <details>
-<summary>Click to reveal answer</summary>
+<summary>Show Answer</summary>
 
-**Answer: B) HCP Terraform and Terraform 1.13+**
+Yes. `terraform_data` belongs to the built-in `terraform` provider (`terraform.io/builtin/terraform`). In a Stack, every provider a component uses must be declared in `required_providers`, configured with a `provider` block, and passed in `providers`.
 
-Stacks require HCP Terraform (not available in open-source Terraform) and were GA in Terraform 1.13.
 </details>
 
 ---
 
-### Question 4: Deployments
-**In Terraform Stacks, what is a "Deployment"?**
+### Question 4: Cost
 
-A) A single `terraform apply` operation  
-B) An instance of the Stack (like a workspace for the entire Stack)  
-C) A component within the Stack  
-D) A provider configuration
+**A Stack has 3 components with 4, 6 and 0 billable resources (the last one is only `terraform_data`). It has 4 deployments. How many resources under management does it add?**
 
 <details>
-<summary>Click to reveal answer</summary>
+<summary>Show Answer</summary>
 
-**Answer: B) An instance of the Stack (like a workspace for the entire Stack)**
+(4 + 6 + 0) × 4 = **40**. Every deployment has its own copy of every component. `terraform_data` doesn't count.
 
-A Deployment is an instance of the Stack with specific input values — for example, `dev`, `staging`, and `prod` deployments of the same Stack definition.
+</details>
+
+---
+
+### Question 5: Validation
+
+**`terraform stacks validate` succeeds. Can a deployment still fail its variable validation?**
+
+<details>
+<summary>Show Answer</summary>
+
+Yes. `validate` checks the configuration, not the values in `deployment` blocks. A deployment that passes `environment = "qa"` to a variable that only allows `dev`, `staging` and `prod` passes `validate`, and fails when HCP Terraform plans it.
+
 </details>
 
 ---
@@ -1004,17 +597,18 @@ A Deployment is an instance of the Stack with specific input values — for exam
 ## 📚 Additional Resources
 
 ### Official Documentation
-- [Terraform Stacks Overview](https://developer.hashicorp.com/terraform/language/stacks)
-- [`.tfstack.hcl` Reference](https://developer.hashicorp.com/terraform/language/stacks/reference/tfstack)
-- [`.tfdeploy.hcl` Reference](https://developer.hashicorp.com/terraform/language/stacks/reference/tfdeploy)
-- [terraform stacks CLI](https://developer.hashicorp.com/terraform/cli/commands/stacks)
-- [HCP Terraform Stacks](https://developer.hashicorp.com/terraform/cloud-docs/stacks)
+- [Stacks overview](https://developer.hashicorp.com/terraform/language/stacks)
+- [Define component configuration](https://developer.hashicorp.com/terraform/language/stacks/component/config)
+- [Declare providers](https://developer.hashicorp.com/terraform/language/stacks/component/declare-providers)
+- [Define deployment configuration](https://developer.hashicorp.com/terraform/language/stacks/deploy/config)
+- [Authenticate a Stack](https://developer.hashicorp.com/terraform/language/stacks/deploy/authenticate)
+- [Set conditions for deployment runs](https://developer.hashicorp.com/terraform/language/stacks/deploy/conditions)
+- [Update from beta to GA](https://developer.hashicorp.com/terraform/language/stacks/update-GA)
+- [`terraform stacks` CLI](https://developer.hashicorp.com/terraform/cli/commands/stacks)
+- [Destroy a Stack](https://developer.hashicorp.com/terraform/cloud-docs/stacks/destroy)
+- [Tutorial: Deploy a Stack with HCP Terraform](https://developer.hashicorp.com/terraform/tutorials/cloud/stacks-deploy)
 
 ### Related Courses
 - **Previous**: [TF-404: Sentinel Policy as Code](../TF-404-sentinel-policies/README.md)
-- **Related**: [TF-402: Remote Runs & VCS Integration](../TF-402-remote-runs/README.md) — prerequisite concepts
-- **Related**: [TF-305: Workspaces & Remote State](../../TF-300-advanced/TF-305-workspaces-remote-state/README.md) — compare with workspaces
-
----
-
-*Part of the [Hashi-Training](../../README.md) curriculum — TF-400: HCP Terraform & Enterprise Features*
+- **Related**: [TF-304: Policy as Code](../../TF-300-advanced/TF-304-policy-code/README.md) (Terraform policy is the framework that applies to Stacks)
+- **Related**: [TF-403: Security & Access](../TF-403-security-access/README.md) (dynamic credentials)

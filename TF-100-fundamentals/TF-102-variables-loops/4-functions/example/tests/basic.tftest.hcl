@@ -32,8 +32,8 @@ run "creates_files_with_prod_environment" {
   variables {
     environment = "prod"
     file_contents = {
-      "app.txt"    = "Production app config"
-      "db.txt"     = "Production db config"
+      "app.txt" = "Production app config"
+      "db.txt"  = "Production db config"
     }
   }
 

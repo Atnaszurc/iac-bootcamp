@@ -133,7 +133,7 @@ resource "aws_key_pair" "web" {
 # AWS EC2 instance - uses abstracted instance type
 resource "aws_instance" "web" {
   ami                    = data.aws_ami.ubuntu.id
-  instance_type          = local.aws_instance_type  # Resolved from t-shirt size
+  instance_type          = local.aws_instance_type # Resolved from t-shirt size
   subnet_id              = aws_subnet.web.id
   vpc_security_group_ids = [aws_security_group.web.id]
   key_name               = aws_key_pair.web.key_name
@@ -141,7 +141,7 @@ resource "aws_instance" "web" {
   tags = merge(local.common_tags, {
     Name  = "${local.name_prefix}-aws-web"
     Cloud = "AWS"
-    Size  = var.vm_size  # Store abstract size as tag for reference
+    Size  = var.vm_size # Store abstract size as tag for reference
   })
 }
 
@@ -236,7 +236,7 @@ resource "azurerm_linux_virtual_machine" "web" {
   name                = "${local.name_prefix}-azure-web"
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
-  size                = local.azure_vm_size  # Resolved from t-shirt size
+  size                = local.azure_vm_size # Resolved from t-shirt size
   admin_username      = "azureuser"
 
   network_interface_ids = [azurerm_network_interface.web.id]
@@ -260,6 +260,6 @@ resource "azurerm_linux_virtual_machine" "web" {
 
   tags = merge(local.common_tags, {
     Cloud = "Azure"
-    Size  = var.vm_size  # Store abstract size as tag for reference
+    Size  = var.vm_size # Store abstract size as tag for reference
   })
 }

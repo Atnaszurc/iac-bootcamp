@@ -35,7 +35,7 @@ After completing TF-302, you will be able to:
 
 ## 🗂️ Course Structure
 
-This course has two main sections with subdirectories:
+This course has five sections, each in its own subdirectory:
 
 ### 1. Pre/Postconditions (`1-pre-postconditions/`)
 
@@ -47,6 +47,8 @@ Learn to use lifecycle conditions for resource-level validation.
 - Using `self` to reference resource attributes
 - Environment-specific validation
 - Cross-resource validation
+
+**Hands-on**: a libvirt VM guarded by conditions on the network (no overlap with reserved ranges), the pool (free space), the disk (not smaller than its image), the host (enough memory) and the result (running, with an IP in the right network). Tests show how to mock each one.
 
 **See**: [1-pre-postconditions/README.md](1-pre-postconditions/README.md)
 
@@ -62,6 +64,8 @@ Master check blocks for final infrastructure validation.
 - Data source integration
 - Multi-resource validation
 - Grouping related checks
+
+**Hands-on**: an nginx VM with a health check (a scoped `http` data source that expects HTTP 200 and the VM's own name in the page) and a host memory check; drift shows up as a check warning, not an error.
 
 **See**: [2-check-blocks/README.md](2-check-blocks/README.md)
 
@@ -93,6 +97,8 @@ Learn to use write-only attributes for secure secret handling (Terraform 1.11+).
 - Migration from regular attributes
 - Best practices for secret management
 
+**Hands-on**: a self-signed certificate from the `tls` provider, whose private key goes in through `private_key_pem_wo` and never appears in state; rotation with `private_key_pem_wo_version`.
+
 **See**: [4-write-only-attributes/README.md](4-write-only-attributes/README.md)
 
 ---
@@ -107,6 +113,8 @@ Understand how Terraform 1.15 improves deprecation detection and reporting.
 - Understanding deprecation warnings
 - Migration strategies for deprecated features
 - Best practices for handling deprecations
+
+**Hands-on**: real deprecations in the `random` and `null` providers: read the warnings, migrate without changing infrastructure, and fail CI on deprecations with `plan -json`.
 
 **See**: [5-deprecation-warnings/README.md](5-deprecation-warnings/README.md)
 
@@ -193,18 +201,31 @@ Postconditions are checked **after** Terraform has successfully created or updat
 
 ```hcl
 resource "libvirt_domain" "vm" {
-  name   = var.vm_name
-  memory = var.vm_memory
-  vcpu   = var.vm_vcpu
-  
-  disk {
-    volume_id = libvirt_volume.os.id
+  name        = var.vm_name
+  memory      = var.vm_memory
+  memory_unit = "MiB"
+  vcpu        = var.vm_vcpu
+  type        = "kvm"
+  os          = { type = "hvm", type_arch = "x86_64", type_machine = "q35" }
+
+  devices = {
+    disks = [
+      {
+        source = {
+          volume = {
+            pool   = libvirt_volume.os.pool
+            volume = libvirt_volume.os.name
+          }
+        }
+        target = { dev = "vda", bus = "virtio" }
+      }
+    ]
   }
-  
+
   lifecycle {
     postcondition {
       condition     = self.memory >= 1024
-      error_message = "VM memory must be at least 1 GB (1024 MB). Actual: ${self.memory} MB"
+      error_message = "VM memory must be at least 1 GB (1024 MiB). Actual: ${self.memory} MiB"
     }
     
     postcondition {
@@ -344,15 +365,15 @@ resource "libvirt_domain" "app" {
 
 ```hcl
 resource "libvirt_volume" "os" {
-  name   = "os-disk"
-  pool   = libvirt_pool.default.name
-  size   = var.disk_size * 1024 * 1024 * 1024  # Convert GB to bytes
-  format = "qcow2"
-  
+  name     = "os-disk.qcow2"
+  pool     = libvirt_pool.default.name
+  capacity = var.disk_size * 1024 * 1024 * 1024 # Convert GB to bytes
+  target   = { format = { type = "qcow2" } }
+
   lifecycle {
     postcondition {
-      condition     = self.size >= 10737418240  # 10 GB in bytes
-      error_message = "OS disk must be at least 10 GB. Actual: ${self.size / 1024 / 1024 / 1024} GB"
+      condition     = self.capacity >= 10737418240 # 10 GB in bytes
+      error_message = "OS disk must be at least 10 GB. Actual: ${self.capacity / 1024 / 1024 / 1024} GB"
     }
   }
 }
@@ -400,30 +421,44 @@ check "infrastructure_compliance" {
 
 ```hcl
 resource "libvirt_network" "app" {
-  name      = "app-network"
-  mode      = "nat"
-  addresses = ["10.0.1.0/24"]
+  name    = "app-network"
+  forward = { mode = "nat" }
+  ips = [{
+    address = "10.0.1.1"
+    prefix  = 24
+    dhcp    = { ranges = [{ start = "10.0.1.100", end = "10.0.1.200" }] }
+  }]
 }
 
 resource "libvirt_domain" "web" {
-  name   = "web-server"
-  memory = 2048
-  vcpu   = 2
-  
-  network_interface {
-    network_id = libvirt_network.app.id
+  name        = "web-server"
+  memory      = 2048
+  memory_unit = "MiB"
+  vcpu        = 2
+  type        = "kvm"
+  os          = { type = "hvm", type_arch = "x86_64", type_machine = "q35" }
+
+  devices = {
+    interfaces = [
+      {
+        model  = { type = "virtio" }
+        source = { network = { network = libvirt_network.app.name } }
+      }
+    ]
   }
-  
+
   lifecycle {
-    # Ensure network exists before creating VM
+    # The web server needs outbound access, so its network must forward traffic
     precondition {
-      condition     = libvirt_network.app.id != null
-      error_message = "Network must be created before VM."
+      condition     = libvirt_network.app.forward != null
+      error_message = "The app network is isolated (no forward). The web server needs outbound access."
     }
-    
-    # Verify VM is connected to network
+
+    # Verify VM is connected to a network. This catches a real trap: Terraform
+    # silently ignores misspelled keys inside nested attributes, so a typo
+    # like "interface" instead of "interfaces" gives a VM with no NIC.
     postcondition {
-      condition     = length(self.network_interface) > 0
+      condition     = length(coalesce(self.devices.interfaces, [])) > 0
       error_message = "VM must have at least one network interface."
     }
   }
@@ -729,21 +764,28 @@ check "database_compliance" {
 
 ### 4. Use Data Sources in Check Blocks
 
-```hcl
-# Fetch current state
-data "libvirt_network" "app" {
-  name = libvirt_network.app.name
-}
+A data source declared *inside* a check block is scoped to it: if it fails, you get a warning instead of a failed plan.
 
-check "network_state" {
-  assert {
-    condition     = data.libvirt_network.app.mode == "nat"
-    error_message = "Network must use NAT mode."
+```hcl
+check "web_server_has_address" {
+  # Ask libvirt which address DHCP handed out
+  data "libvirt_domain_interface_addresses" "web" {
+    domain = libvirt_domain.web.name
+    source = "lease"
   }
-  
+
   assert {
-    condition     = length(data.libvirt_network.app.addresses) > 0
-    error_message = "Network must have address ranges."
+    condition     = length(data.libvirt_domain_interface_addresses.web.interfaces) > 0
+    error_message = "web-server has no DHCP lease. Is it running?"
+  }
+
+  assert {
+    condition = alltrue([
+      for i in data.libvirt_domain_interface_addresses.web.interfaces : alltrue([
+        for a in i.addrs : a.type != "ipv4" || cidrhost("10.0.1.0/24", 0) == cidrhost("${a.addr}/24", 0)
+      ])
+    ])
+    error_message = "web-server has an IPv4 address outside the app network (10.0.1.0/24)."
   }
 }
 ```

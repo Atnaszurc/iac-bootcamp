@@ -1,45 +1,44 @@
-# Azure Network Setup with Terraform
+# Libvirt Network Setup with Terraform
 
-Objective: Create a virtual network and subnet in Azure using Terraform inside your existing resource group.
+Objective: Create a NAT network and an isolated network on your libvirt host using Terraform.
 
 ## Prerequisites:
-- [Azure CLI installed](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
-- Your own Resource Group
+- libvirt/KVM installed and running, see [docs/libvirt-setup.md](../../../docs/libvirt-setup.md)
 - Terraform CLI
+- Your user in the `libvirt` group (`virsh -c qemu:///system list` works without sudo)
 
 ## Table of Contents
 
 1. [Prerequisites](#prerequisites)
-2. [Table of Contents](#table-of-contents)
-3. [Tasks](#tasks)
-   - [Creating the Terraform Configuration](#creating-the-terraform-configuration)
-   - [Configuring the Azure Provider](#configuring-the-azure-provider)
-   - [Using Data Sources](#using-data-sources)
-   - [Creating Network Resources](#creating-network-resources)
-4. [Applying the Configuration](#applying-the-configuration)
-5. [Verifying the Network Setup](#verifying-the-network-setup)
+2. [Tasks](#tasks)
+3. [Applying the Configuration](#8-run-the-following-commands-to-initialize-terraform-plan-and-apply-your-changes)
+4. [Verifying the Network Setup](#9-verify-that-your-networks-have-been-created)
 
 ## Tasks:
 
-1. Using your experience from the previous block, create your main.tf, variables.tf, terraform.tfvars file. 
+1. Using your experience from the previous block, create your `main.tf`, `variables.tf` and `terraform.tfvars` files.
+
 2. Ensure you use the new required provider for this lab:
 ```hcl
-azurerm = {
-    source  = "hashicorp/azurerm"
-    version = "=4.0.1"
+libvirt = {
+  source  = "dmacvicar/libvirt"
+  version = "~> 0.9"
 }
 ```
-3. Next we will be configuring the provider, which is easy since we are using the Azure CLI for logging in. Add the following to your provider block:
+
+3. Next we configure the provider. There's no login step: Terraform talks to the libvirt daemon on your own machine. Add the following to your provider block:
 ```hcl
-provider "azurerm" {
-  features {}
-  subscription_id = var.subscription_id
+provider "libvirt" {
+  uri = "qemu:///system"
 }
 ```
-4. Next we need to use a data source to get information about our resource group. Add the following to your main.tf file:
+
+4. Next we use a data source to get information about the host we're deploying to. Add the following to your `main.tf` file:
 ```hcl
-data "azurerm_resource_group" "example" {
-  name = var.resource_group_name
+data "libvirt_node_info" "host" {}
+
+output "host_memory_mb" {
+  value = floor(data.libvirt_node_info.host.memory_total_kb / 1024)
 }
 ```
 
@@ -50,47 +49,59 @@ data "azurerm_resource_group" "example" {
 > 3. Use existing resources: Data sources let you reference and use properties of resources that already exist and aren't managed by your current Terraform configuration.
 > 4. Dynamic configurations: They enable more dynamic and flexible Terraform configurations by allowing you to base your resource definitions on existing infrastructure.
 > 5. Syntax: Data sources are defined using the `data` block in Terraform, similar to how resources are defined with the `resource` block.
-> In the example provided, `data "azurerm_resource_group" "example"` is a data source that retrieves information about an existing Azure resource group. This allows you to use properties of the resource group (like its location) in other parts of your Terraform configuration without having to hardcode values or manage the resource group itself within this particular Terraform project.
+> In the example above, `data "libvirt_node_info" "host"` asks libvirt about the machine it runs on: CPU model, core count and memory. Later you can use that to size VMs so they never ask for more memory than the host has.
 
-
-5. Next we will be creating the network resources, starting with the virtual network. Add the following to your main.tf file:
+5. Next we create the network resources, starting with a NAT network. VMs on it can reach the internet through your host, and libvirt hands out addresses with DHCP. Add the following to your `main.tf` file:
 ```hcl
+resource "libvirt_network" "main" {
+  name      = "${var.network_name}-net"
+  autostart = true
 
-resource "azurerm_virtual_network" "example" {
-  name                = "example-network"
-  address_space       = ["10.0.0.0/16"]
-  location            = data.azurerm_resource_group.example.location
-  resource_group_name = data.azurerm_resource_group.example.name
-}
-
-resource "azurerm_subnet" "example" {
-  name                 = "internal"
-  resource_group_name  = data.azurerm_resource_group.example.name
-  virtual_network_name = azurerm_virtual_network.example.name
-  address_prefixes     = ["10.0.2.0/24"]
-}
-
-resource "azurerm_network_interface" "example" {
-  name                = "example-nic"
-  location            = data.azurerm_resource_group.example.location
-  resource_group_name = data.azurerm_resource_group.example.name
-
-  ip_configuration {
-    name                          = "internal"
-    subnet_id                     = azurerm_subnet.example.id
-    private_ip_address_allocation = "Dynamic"
+  forward = {
+    mode = "nat"
   }
+
+  ips = [
+    {
+      address = "10.10.0.1" # the host's own address on this network
+      prefix  = 24
+      dhcp = {
+        ranges = [{ start = "10.10.0.100", end = "10.10.0.200" }]
+      }
+    }
+  ]
 }
 ```
 
-6. Finally, add your resource group name to your terraform.tfvars file.
+> Notice the `=` in `forward = { ... }`. In the libvirt provider these are *nested attributes*, not blocks. Be careful with the names too: if you misspell a key inside one of them, Terraform ignores it without an error.
+
+6. Now add a second network that is isolated. VMs on it can talk to each other and to the host, but not to the internet. An isolated network is simply one without `forward`:
 ```hcl
-resource_group_name = "your-resource-group-name"
+resource "libvirt_network" "isolated" {
+  name      = "${var.network_name}-isolated"
+  autostart = false
+
+  ips = [
+    {
+      address = "10.20.0.1"
+      prefix  = 24
+    }
+  ]
+}
 ```
 
-7. Login to Azure CLI using the following command and follow the prompts:
-```bash
-az login
+No `dhcp` here either, so VMs on this network need a static address. That's a common choice for a backend network.
+
+7. Finally, add your network name to your `variables.tf` and `terraform.tfvars` files.
+```hcl
+# variables.tf
+variable "network_name" {
+  type = string
+}
+```
+```hcl
+# terraform.tfvars
+network_name = "tf-103"
 ```
 
 8. Run the following commands to initialize Terraform, plan, and apply your changes:
@@ -100,12 +111,17 @@ terraform plan
 terraform apply
 ```
 
-9. Verify that your resources have been created by running the following command:
+9. Verify that your networks have been created:
 ```bash
-az network nic list --resource-group your-resource-group-name
+virsh -c qemu:///system net-list --all
+virsh -c qemu:///system net-dumpxml tf-103-net
 ```
 
-For simplicity, you can run the following command to set your default resource group:
+In the XML you'll find `<forward mode='nat'>` and the DHCP range. Run `net-dumpxml` on the isolated network and notice that it has neither.
+
+To avoid typing `-c qemu:///system` every time, set it as your default connection:
 ```bash
-az configure --defaults group=<your-resource-group-name>
+export LIBVIRT_DEFAULT_URI=qemu:///system
 ```
+
+The [`example/`](./example/) folder has a complete solution, with the addresses in variables and tests you can run with `terraform test`.

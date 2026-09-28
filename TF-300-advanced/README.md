@@ -115,7 +115,7 @@ Implement runtime validation with preconditions, postconditions, and check block
 
 ### TF-303: Terraform Test Framework
 **Duration**: 1 hour  
-**Directory**: `TF-303-test-framework/` **[PLANNED]**
+**Directory**: `TF-303-test-framework/`
 
 Learn to write automated tests for Terraform modules using the native test framework introduced in Terraform 1.6+.
 
@@ -137,33 +137,30 @@ Learn to write automated tests for Terraform modules using the native test frame
 - Run tests in CI/CD pipelines
 - Practice test-driven development
 
-**Status**: 🚧 Content in development
+**Status**: ✅ Complete (every libvirt example and lab passes `terraform test`)
 
 ---
 
 ### TF-304: Policy as Code - OPA/Rego
-**Duration**: 1 hour
+**Duration**: 1.5 hours
 **Directory**: `TF-304-policy-code/`
+**Needs**: OPA 1.x (Terraform and libvirt only to make your own plans)
 
 Implement policy as code using Open Policy Agent (OPA) and Rego to enforce organizational standards and compliance requirements.
 
 **Topics**:
-- Introduction to Policy as Code
-- Open Policy Agent (OPA) basics
-- Rego language fundamentals
-- Writing Terraform policies with `tfplan` input
-- Policy testing with OPA test framework
-- Sentinel overview (see TF-404 for Sentinel)
-- Policy enforcement strategies
-- Compliance automation
+- Policy vs validation and conditions
+- Rego in the OPA 1.x syntax, and migrating old policies
+- The Terraform plan JSON as policy input
+- Undefined values and the "silent pass" bug
+- Policy testing with `opa test`, coverage, and linting with Regal
+- Enforcement: `deny`/`warn`, CI gates, and HCP Terraform (OPA, Sentinel, Terraform policy)
 
 **Hands-On**:
-- Write OPA policies for Terraform plan validation
-- Test policies with OPA test framework
-- Enforce naming conventions (Name tag format, Environment tag validation)
-- Validate security configurations (file permissions, required tags)
-- Implement compliance checks
-- Run policies in CI/CD pipelines
+- Evaluate policies against a real libvirt plan (naming, resource limits in the right units, networks)
+- Fix a plan until it passes, and make your own plans
+- Write a policy test-first (qcow2 volumes)
+- Protect production VMs from deletes and replacements
 
 **Key Skills**:
 - OPA/Rego policy development
@@ -233,32 +230,34 @@ Covers two new Terraform 1.14 features that extend the Terraform workflow beyond
 
 **Topics**:
 - **Part 1 — List Resources & terraform query**:
-  - `.tfquery.hcl` file format
-  - `list` block syntax and provider-defined filters
-  - `terraform query` command
+  - `.tfquery.hcl` file format (only `list`, `provider`, `variable`, `locals` blocks)
+  - `list` block syntax — provider arguments inside `config {}`, `include_resource`, `limit`
+  - `terraform query` command and `terraform validate -query`
   - `terraform query -generate-config-out` for import generation
   - List resources vs data sources — comparison and use cases
-  - Discovery workflow: find → query → import → manage
+  - Bulk import workflow: search → generate → import → clean up
 
-- **Part 2 — Actions Block**:
-  - `action` block syntax and provider-defined operations
-  - Trigger types: `after_create`, `after_update`, `after_apply`, `before_destroy`
-  - Manual invocation with `terraform apply -invoke`
-  - Actions vs `local-exec` vs `null_resource` — when to use each
-  - Real-world patterns: Lambda warm-up, DB snapshots, cache invalidation
+- **Part 2 — Actions**:
+  - `action` block syntax with a `config {}` block
+  - Triggers via `lifecycle { action_trigger { ... } }` on the resource
+  - Events: `before_create`, `after_create`, `before_update`, `after_update`, plus `before_destroy` and `after_destroy` (1.16+)
+  - `on_failure = halt | continue | taint` (1.16+)
+  - The `caller` symbol for reusing one action across resource instances (1.16+)
+  - Manual invocation with `terraform plan/apply -invoke`
+  - Actions vs `local-exec` vs `terraform_data` — when to use each
 
 **Hands-On**:
-- Design a `.tfquery.hcl` file to discover unmanaged EC2 instances
-- Generate import configuration from query results
-- Design actions for a Lambda deployment workflow
-- Design a pre-destroy backup action for an RDS instance
+- Discover and bulk-import "forgotten" EC2 instances and S3 buckets with `terraform query` (against Moto, a local AWS mock in Docker)
+- Wire `local_command` actions to create, update and destroy events (no credentials needed)
+- Invoke an action manually and experiment with `on_failure`
+- Read real-world AWS action patterns: Lambda warm-up, DynamoDB backup before destroy, CloudFront invalidation
 
 **Key Skills**:
 - Infrastructure discovery and import automation
 - Provider-defined imperative operations
 - Modern alternatives to `null_resource` + `local-exec`
 
-> **Note**: Both features require provider support. As of Terraform 1.14, provider support is rolling out. The hands-on exercises are design-focused and conceptual where provider support is not yet available.
+> **Note**: Both features require provider support. The actions hands-on uses the `hashicorp/local` provider's `local_command` action (2.6.0+), so it runs anywhere. The query hands-on uses the real AWS provider against Moto, an open-source AWS mock running in Docker, because only the big cloud providers implement list resources. No AWS account needed.
 
 ---
 
@@ -318,7 +317,7 @@ Week 1: Validation Fundamentals
 └── Day 3-4: TF-302 (Pre/Post Conditions & Check Blocks)
 
 Week 2: Testing, Policy & State Management
-├── Day 1-2: TF-303 (Terraform Test Framework) [PLANNED]
+├── Day 1-2: TF-303 (Terraform Test Framework)
 ├── Day 3:   TF-304 (Policy as Code - OPA/Rego)
 ├── Day 4-5: TF-305 (Workspaces & Remote State)
 └── Day 6:   TF-306 (Terraform Functions Deep Dive)
@@ -331,16 +330,15 @@ Week 3: New Terraform 1.14 Features
 
 - ✅ **TF-301**: Complete and ready
 - ✅ **TF-302**: Complete and ready
-- 🚧 **TF-303**: Content in development
-- ✅ **TF-304**: Complete and ready (OPA/Rego with 15 passing tests)
+- ✅ **TF-303**: Complete and ready
+- ✅ **TF-304**: Complete and ready (OPA 1.x, 36 policy tests)
 - ✅ **TF-305**: Complete and ready
 - ✅ **TF-306**: Complete and ready
 - ✅ **TF-307**: Complete and ready (Terraform 1.14+)
 
 ### Time Commitment
 
-- **Currently Available**: 8.5 hours (TF-301 + TF-302 + TF-304 + TF-305 + TF-306 + TF-307)
-- **Full Course (when complete)**: 9.5 hours
+- **Currently Available**: 10 hours (all seven modules)
 - **With Practice**: 12-14 hours (recommended)
 - **Full Mastery**: 18-20 hours (includes experimentation)
 
@@ -408,10 +406,12 @@ TF-300-advanced/
 │   ├── 1-pre-postconditions/          # Lifecycle validation
 │   ├── 2-check-blocks/                # Check blocks
 │   └── 3-lifecycle-arguments/         # create_before_destroy, ignore_changes, etc.
-├── TF-303-test-framework/             # [PLANNED]
-│   └── README.md                      # Coming soon
-├── TF-304-policy-code/                # [PLANNED]
-│   └── README.md                      # Coming soon
+├── TF-303-test-framework/
+│   ├── README.md                      # The terraform test framework
+│   └── example/                       # Tests with mocks, overrides and a real integration run
+├── TF-304-policy-code/
+│   ├── README.md                      # Policy as code with OPA/Rego
+│   └── example/                       # libvirt config, real plan.json, policies + tests
 ├── TF-305-workspaces-remote-state/
 │   ├── README.md                      # Course overview
 │   ├── 1-workspaces/                  # CLI workspaces
@@ -458,7 +458,7 @@ TF-300-advanced/
 - Combine multiple functions to solve real infrastructure problems
 - Use terraform console to test functions interactively
 
-#### After TF-303 (When Available), you will:
+#### After TF-303, you will:
 - Write automated tests for Terraform modules
 - Create test assertions
 - Implement integration tests
@@ -572,7 +572,7 @@ Once you complete TF-300, you're ready for:
 ### Community Resources
 
 - [Terraform Best Practices](https://www.terraform-best-practices.com/)
-- [OPA Documentation](https://www.openpolicyagent.org/docs/latest/)
+- [OPA Documentation](https://www.openpolicyagent.org/docs/)
 - [Sentinel Documentation](https://docs.hashicorp.com/sentinel)
 
 ---
@@ -648,37 +648,6 @@ After TF-300, you can:
 
 ---
 
-## 🚧 Upcoming Content
-
-### TF-303: Terraform Test Framework
-
-**Status**: In Development  
-**Expected**: Q2 2026
-
-Will cover:
-- Native Terraform testing (1.6+)
-- Test file structure
-- Assertions and expectations
-- Integration testing
-- CI/CD integration
-
-### TF-303: Terraform Test Framework
-
-**Status**: In Development
-**Expected**: Q2 2026
-
-Will cover:
-- Native Terraform testing (1.6+)
-- Test file structure (.tftest.hcl)
-- Assertions and expectations
-- Integration testing
-- Mocking with .tfmock.hcl
-- CI/CD integration
-
-**Want to contribute?** Help us develop this content! See [CONTRIBUTING.md](../CONTRIBUTING.md)
-
----
-
 ## 🤝 Contributing
 
 Found an issue or want to improve the course?
@@ -686,7 +655,7 @@ Found an issue or want to improve the course?
 - Report bugs via GitHub Issues
 - Suggest improvements via Pull Requests
 - Share your validation patterns
-- Help develop TF-303 and TF-304 content
+- Suggest new labs and policy examples
 - Help other learners in Discussions
 
 ---

@@ -185,16 +185,16 @@ locals {
   # =========================================================================
 
   # tostring() — convert number/bool to string
-  replicas_as_string  = tostring(var.app_replicas)       # "3"
+  replicas_as_string   = tostring(var.app_replicas)      # "3"
   monitoring_as_string = tostring(var.enable_monitoring) # "true"
 
   # tonumber() — convert string to number
   port_string = "8080"
-  port_number = tonumber(local.port_string)  # 8080
+  port_number = tonumber(local.port_string) # 8080
 
   # tobool() — convert string to bool
   flag_string = "true"
-  flag_bool   = tobool(local.flag_string)  # true
+  flag_bool   = tobool(local.flag_string) # true
 
   # toset() — convert list to set (removes duplicates)
   packages_with_dupes = ["nginx", "curl", "nginx", "git", "curl"]
@@ -229,7 +229,7 @@ resource "local_file" "deployment_spec_json" {
 resource "local_file" "cloud_init_yaml" {
   filename = "${path.module}/output/cloud-init.yaml"
   # Prepend the required cloud-init header
-  content  = "#cloud-config\n${local.cloud_init_yaml}"
+  content = "#cloud-config\n${local.cloud_init_yaml}"
 }
 
 resource "local_file" "k8s_configmap_yaml" {

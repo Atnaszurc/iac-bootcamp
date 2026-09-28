@@ -5,8 +5,8 @@ run "test_new_variables" {
   command = plan
 
   variables {
-    instance_type    = "t3.small"
-    environment      = "staging"
+    instance_type     = "t3.small"
+    environment       = "staging"
     enable_monitoring = true
   }
 

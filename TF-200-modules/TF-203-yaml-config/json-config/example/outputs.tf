@@ -16,9 +16,9 @@ output "manifest_path" {
 output "config_summary" {
   description = "Summary of the parsed JSON configuration"
   value = {
-    environment      = local.config.environment
-    total_servers    = length(local.config.servers)
-    enabled_servers  = length(local.enabled_servers)
-    tags             = local.config.tags
+    environment     = local.config.environment
+    total_servers   = length(local.config.servers)
+    enabled_servers = length(local.enabled_servers)
+    tags            = local.config.tags
   }
 }

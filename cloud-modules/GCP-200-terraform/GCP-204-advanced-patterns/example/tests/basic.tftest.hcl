@@ -16,19 +16,19 @@ run "validate_variables" {
   command = plan
 
   variables {
-    project_id                     = "test-project-123456"
-    region                         = "us-central1"
-    zone                           = "us-central1-a"
-    environment                    = "dev"
-    vpc_name                       = "test-vpc"
-    subnet_cidr                    = "10.0.0.0/24"
-    mig_target_size                = 2
-    autoscaler_min_replicas        = 2
-    autoscaler_max_replicas        = 5
-    autoscaler_cpu_target          = 0.6
-    enable_cloud_sql               = true
-    database_version               = "POSTGRES_15"
-    database_tier                  = "db-f1-micro"
+    project_id              = "test-project-123456"
+    region                  = "us-central1"
+    zone                    = "us-central1-a"
+    environment             = "dev"
+    vpc_name                = "test-vpc"
+    subnet_cidr             = "10.0.0.0/24"
+    mig_target_size         = 2
+    autoscaler_min_replicas = 2
+    autoscaler_max_replicas = 5
+    autoscaler_cpu_target   = 0.6
+    enable_cloud_sql        = true
+    database_version        = "POSTGRES_15"
+    database_tier           = "db-f1-micro"
   }
 
   assert {
@@ -47,12 +47,12 @@ run "validate_network" {
   command = plan
 
   variables {
-    project_id   = "test-project-123456"
-    region       = "us-central1"
-    zone         = "us-central1-a"
-    environment  = "dev"
-    vpc_name     = "gcp-204-test-vpc"
-    subnet_cidr  = "10.1.0.0/24"
+    project_id  = "test-project-123456"
+    region      = "us-central1"
+    zone        = "us-central1-a"
+    environment = "dev"
+    vpc_name    = "gcp-204-test-vpc"
+    subnet_cidr = "10.1.0.0/24"
   }
 
   assert {

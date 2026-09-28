@@ -4,6 +4,12 @@ variable "project_name" {
   default     = "tf103-vms"
 }
 
+variable "network_cidr" {
+  description = "CIDR block for the VM network"
+  type        = string
+  default     = "10.113.0.0/24"
+}
+
 variable "base_image_url" {
   description = "URL or local path to the base cloud image (qcow2)"
   type        = string

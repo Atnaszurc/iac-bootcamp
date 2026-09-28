@@ -14,3 +14,14 @@ variable "network_cidr" {
     error_message = "network_cidr must be a valid CIDR block (e.g. 10.10.0.0/24)."
   }
 }
+
+variable "isolated_cidr" {
+  description = "CIDR block for the isolated network"
+  type        = string
+  default     = "10.20.0.0/24"
+
+  validation {
+    condition     = can(cidrnetmask(var.isolated_cidr))
+    error_message = "isolated_cidr must be a valid CIDR block (e.g. 10.20.0.0/24)."
+  }
+}

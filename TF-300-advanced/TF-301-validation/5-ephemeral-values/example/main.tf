@@ -114,7 +114,7 @@ resource "null_resource" "db_init" {
 resource "local_file" "api_status" {
   filename = "${path.module}/api-status.conf"
   # local.api_token_provided is a boolean (not the token) — safe to store
-  content  = "api_integration_enabled = ${local.api_token_provided}\n"
+  content = "api_integration_enabled = ${local.api_token_provided}\n"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────

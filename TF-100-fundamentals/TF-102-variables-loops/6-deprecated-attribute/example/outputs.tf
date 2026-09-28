@@ -49,11 +49,11 @@ output "migration_status" {
     using_new_instance_type = var.instance_type != "t3.micro"
     using_new_environment   = var.environment != "development"
     using_new_monitoring    = var.enable_monitoring != false
-    
+
     using_old_instance_type = var.old_instance_type != "t2.micro"
     using_old_environment   = var.env != "dev"
     using_old_monitoring    = var.monitoring != false
-    
+
     migration_complete = (
       var.instance_type != "t3.micro" &&
       var.environment != "development" &&

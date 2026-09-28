@@ -51,7 +51,7 @@ This course is organized into **5 comprehensive sections** covering operational 
 **Key Commands Covered**:
 - `terraform init` - Initialize working directory
 - `terraform fmt` - Format code consistently
-- `terraform validate` - Validate configuration syntax **and backend blocks** (1.15+)
+- `terraform validate` - Validate configuration syntax **and the backend type** (1.15+)
 - `terraform plan` - Preview infrastructure changes
 - `terraform apply` - Apply changes to infrastructure
 - `terraform destroy` - Destroy infrastructure
@@ -63,7 +63,7 @@ This course is organized into **5 comprehensive sections** covering operational 
 
 **Hands-On**: Practice the complete Terraform workflow with real examples
 
-**New in Terraform 1.15**: The `terraform validate` command now checks backend blocks to ensure the backend type exists, all required attributes are present, and the backend's validation logic passes. See section [`1-cli/6-backend-validation/`](./1-cli/6-backend-validation/) for details.
+**New in Terraform 1.15**: The `terraform validate` command now checks that the backend type exists. The arguments inside the backend block are still checked by `terraform init`, because partial configuration (`-backend-config`) can supply them there. See section [`1-cli/6-backend-validation/`](./1-cli/6-backend-validation/) for details.
 
 ---
 
@@ -569,20 +569,27 @@ module "network" {
   cidr_block   = "10.0.0.0/16"
 }
 
-# Call a registry module
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "5.0.0"
-  
-  name = "my-vpc"
-  cidr = "10.0.0.0/16"
+# Call a registry module (renders every file in templates/, no provider needed)
+module "templates" {
+  source  = "hashicorp/dir/template"
+  version = "1.0.2"
+
+  base_dir      = "${path.module}/templates"
+  template_vars = { name = "lab" }
 }
 
 # Use module outputs
 resource "libvirt_domain" "vm" {
-  name   = "my-vm"
-  network_interface {
-    network_id = module.network.network_id
+  name = "my-vm"
+  # ... memory, type, os and disks (see TF-103)
+  devices = {
+    interfaces = [
+      {
+        model = { type = "virtio" }
+        # libvirt interfaces reference the network by name
+        source = { network = { network = module.network.network_name } }
+      }
+    ]
   }
 }
 ```
@@ -739,6 +746,7 @@ terraform apply -target=resource  # Apply specific resource
 ```bash
 terraform state list              # List resources in state
 terraform state show <resource>   # Show resource details
+terraform state show -json <res>  # Resource as JSON — secrets NOT redacted (1.16+)
 terraform state mv <src> <dst>    # Move resource in state
 terraform state rm <resource>     # Remove resource from state
 terraform state pull              # Download remote state
@@ -757,6 +765,7 @@ terraform output -raw <name>      # Raw output (no quotes)
 ### Workspace Management
 ```bash
 terraform workspace list          # List workspaces
+terraform workspace list -json    # List workspaces as JSON (1.16+)
 terraform workspace new <name>    # Create workspace
 terraform workspace select <name> # Switch workspace
 terraform workspace delete <name> # Delete workspace
@@ -765,6 +774,12 @@ terraform workspace delete <name> # Delete workspace
 ### Module Inspection (1.10+)
 ```bash
 terraform modules -json           # List all modules as JSON (1.10+)
+terraform console -scope=module.x # Evaluate inside a child module (1.16+)
+```
+
+### Faster Plans (1.17 beta)
+```bash
+terraform plan -minimal-refresh   # Refresh only resources with planned changes — misses drift elsewhere
 ```
 
 ### Query (1.14+)

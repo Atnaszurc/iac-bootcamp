@@ -22,20 +22,22 @@ Terraform 1.15 introduces the ability to specify explicit type constraints on `o
 
 **Before Terraform 1.15** (No type checking):
 ```hcl
-output "instance_id" {
-  description = "The instance ID"
-  value       = aws_instance.example.id  # No type validation
+output "first_instance_id" {
+  description = "The first instance's ID"
+  value       = terraform_data.instances[0].output.id # Whatever type it happens to be
 }
 ```
 
 **Terraform 1.15+** (With type constraints):
 ```hcl
-output "instance_id" {
-  description = "The instance ID"
-  type        = string  # Explicit type constraint
-  value       = aws_instance.example.id
+output "first_instance_id" {
+  description = "The first instance's ID"
+  type        = string # Explicit type constraint
+  value       = terraform_data.instances[0].output.id
 }
 ```
+
+The examples below use the resources in [`example/main.tf`](./example/main.tf): `terraform_data` resources that stand in for a network, instances, a database and a load balancer, so everything runs without any provider.
 
 ## Why Output Type Constraints?
 
@@ -133,56 +135,73 @@ Ensure module outputs maintain their type contracts:
 
 ```hcl
 # Module outputs with type constraints
-output "vpc_id" {
-  description = "VPC ID"
+output "network_id" {
+  description = "Network ID"
   type        = string
-  value       = aws_vpc.main.id
+  value       = terraform_data.network.output.vpc_id
 }
 
 output "subnet_ids" {
   description = "List of subnet IDs"
   type        = list(string)
-  value       = aws_subnet.private[*].id
+  value       = [for s in terraform_data.network.output.subnets : s.id]
 }
 
-output "vpc_config" {
-  description = "Complete VPC configuration"
+output "network_summary" {
+  description = "Complete network configuration"
   type = object({
-    vpc_id     = string
+    network_id = string
     cidr_block = string
     subnet_ids = list(string)
   })
   value = {
-    vpc_id     = aws_vpc.main.id
-    cidr_block = aws_vpc.main.cidr_block
-    subnet_ids = aws_subnet.private[*].id
+    network_id = terraform_data.network.output.vpc_id
+    cidr_block = terraform_data.network.output.cidr_block
+    subnet_ids = [for s in terraform_data.network.output.subnets : s.id]
   }
 }
 ```
 
-### Use Case 2: Preventing Type Mismatches
+### Use Case 2: Conversion, and What Fails
 
-Catch type errors early:
+An output type constraint works like a variable's: Terraform **converts** the value to the type when it can, and fails only when it can't.
 
 ```hcl
 locals {
-  # This might accidentally be a number
   port = 8080
 }
 
+# Converted: the output is the string "8080"
 output "application_port" {
   description = "Application port"
-  type        = string  # Will fail if port is not a string
+  type        = string
   value       = local.port
 }
 
-# Fix: Convert to string
-output "application_port_fixed" {
-  description = "Application port"
-  type        = string
-  value       = tostring(local.port)
+# Converted: duplicates are dropped, the output is [1, 2, 3]
+output "unique_numbers" {
+  type  = set(number)
+  value = [1, 2, 2, 3]
+}
+
+# Fails at plan time: "abc" can't become a number
+output "broken" {
+  type  = number
+  value = "abc"
 }
 ```
+
+```
+Error: Invalid output value
+
+  on main.tf line 21, in output "broken":
+  21:   value = "abc"
+
+The value expression does not match this output value's type constraint: a
+number is required.
+```
+
+So a type constraint doesn't catch *every* change: a number quietly becoming a string still passes a `string` constraint. What it does guarantee is the type consumers receive, whatever the value expression produces.
 
 ### Use Case 3: Complex Data Structures
 
@@ -197,16 +216,8 @@ output "database_config" {
     username = string
     database = string
     ssl      = bool
-    tags     = map(string)
   })
-  value = {
-    endpoint = aws_db_instance.main.endpoint
-    port     = aws_db_instance.main.port
-    username = aws_db_instance.main.username
-    database = aws_db_instance.main.db_name
-    ssl      = true
-    tags     = aws_db_instance.main.tags
-  }
+  value = terraform_data.database.output
 }
 ```
 
@@ -248,11 +259,11 @@ output "instances" {
     state      = string
   }))
   value = [
-    for instance in aws_instance.servers : {
-      id         = instance.id
-      name       = instance.tags["Name"]
-      ip_address = instance.private_ip
-      state      = instance.instance_state
+    for instance in terraform_data.instances : {
+      id         = instance.output.id
+      name       = instance.output.name
+      ip_address = instance.output.ip_address
+      state      = instance.output.state
     }
   ]
 }
@@ -266,20 +277,20 @@ Structured maps with type safety:
 output "environments" {
   description = "Environment configurations"
   type = map(object({
-    vpc_id     = string
-    subnet_ids = list(string)
-    region     = string
+    network_cidr = string
+    vm_count     = number
+    memory_mib   = number
   }))
   value = {
     dev = {
-      vpc_id     = aws_vpc.dev.id
-      subnet_ids = aws_subnet.dev[*].id
-      region     = "us-east-1"
+      network_cidr = "10.10.0.0/24"
+      vm_count     = 1
+      memory_mib   = 1024
     }
     prod = {
-      vpc_id     = aws_vpc.prod.id
-      subnet_ids = aws_subnet.prod[*].id
-      region     = "us-west-2"
+      network_cidr = "10.20.0.0/24"
+      vm_count     = 3
+      memory_mib   = 4096
     }
   }
 }
@@ -439,18 +450,18 @@ output "port_as_number" {
 
 ✅ **Good** - Explicit type contracts:
 ```hcl
-output "vpc_id" {
-  description = "VPC ID"
+output "network_id" {
+  description = "Network ID"
   type        = string
-  value       = aws_vpc.main.id
+  value       = terraform_data.network.output.vpc_id
 }
 ```
 
 ❌ **Avoid** - No type constraint:
 ```hcl
-output "vpc_id" {
-  description = "VPC ID"
-  value       = aws_vpc.main.id  # Type not enforced
+output "network_id" {
+  description = "Network ID"
+  value       = terraform_data.network.output.vpc_id # Type not enforced
 }
 ```
 
@@ -460,15 +471,15 @@ output "vpc_id" {
 ```hcl
 output "subnet_ids" {
   type  = list(string)
-  value = aws_subnet.private[*].id
+  value = [for s in terraform_data.network.output.subnets : s.id]
 }
 ```
 
 ❌ **Avoid** - Generic type:
 ```hcl
 output "subnet_ids" {
-  type  = list(any)  # Too permissive
-  value = aws_subnet.private[*].id
+  type  = list(any) # Too permissive
+  value = [for s in terraform_data.network.output.subnets : s.id]
 }
 ```
 
@@ -491,11 +502,11 @@ output "database_config" {
     })
   })
   value = {
-    endpoint = aws_db_instance.main.endpoint
-    port     = aws_db_instance.main.port
+    endpoint = terraform_data.database.output.endpoint
+    port     = terraform_data.database.output.port
     credentials = {
-      username = aws_db_instance.main.username
-      password = aws_db_instance.main.password
+      username = terraform_data.database.output.username
+      password = var.db_password # a sensitive variable
     }
   }
   sensitive = true
@@ -537,17 +548,17 @@ output "validated_number" {
 
 ```hcl
 # Good naming convention
-output "vpc_id" {
+output "network_id" {
   type = string
   # ...
 }
 
-output "vpc_ids" {  # Plural for lists
+output "network_ids" { # Plural for lists
   type = list(string)
   # ...
 }
 
-output "vpc_config" {  # _config suffix for objects
+output "network_config" { # _config suffix for objects
   type = object({...})
   # ...
 }
@@ -562,15 +573,15 @@ output "instance" {
   description = "Instance details"
   type = object({
     id         = string
-    arn        = string
-    public_ip  = string
-    private_ip = string
+    name       = string
+    ip_address = string
+    state      = string
   })
   value = {
-    id         = aws_instance.main.id
-    arn        = aws_instance.main.arn
-    public_ip  = aws_instance.main.public_ip
-    private_ip = aws_instance.main.private_ip
+    id         = terraform_data.instances[0].output.id
+    name       = terraform_data.instances[0].output.name
+    ip_address = terraform_data.instances[0].output.ip_address
+    state      = terraform_data.instances[0].output.state
   }
 }
 ```
@@ -587,10 +598,10 @@ output "connection_info" {
     url      = string
   })
   value = {
-    host     = aws_lb.main.dns_name
+    host     = terraform_data.load_balancer.output.dns_name
     port     = 443
     protocol = "https"
-    url      = "https://${aws_lb.main.dns_name}"
+    url      = "https://${terraform_data.load_balancer.output.dns_name}"
   }
 }
 ```
@@ -601,7 +612,7 @@ output "connection_info" {
 output "infrastructure_summary" {
   description = "Summary of all infrastructure"
   type = object({
-    vpc = object({
+    network = object({
       id   = string
       cidr = string
     })
@@ -615,20 +626,20 @@ output "infrastructure_summary" {
     }))
   })
   value = {
-    vpc = {
-      id   = aws_vpc.main.id
-      cidr = aws_vpc.main.cidr_block
+    network = {
+      id   = terraform_data.network.output.vpc_id
+      cidr = terraform_data.network.output.cidr_block
     }
     instances = [
-      for i in aws_instance.servers : {
-        id   = i.id
-        type = i.instance_type
+      for i in terraform_data.instances : {
+        id   = i.output.id
+        type = i.output.type
       }
     ]
     databases = {
-      for k, db in aws_db_instance.databases : k => {
-        endpoint = db.endpoint
-        port     = db.port
+      main = {
+        endpoint = terraform_data.database.output.endpoint
+        port     = terraform_data.database.output.port
       }
     }
   }

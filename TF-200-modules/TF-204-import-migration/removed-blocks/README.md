@@ -75,6 +75,8 @@ removed {
 | `destroy = false` | Remove from state only — resource keeps running |
 | `destroy = true` | Remove from state AND destroy the resource |
 
+> 🆕 **Terraform 1.16+**: `destroy = false` is also allowed in a resource's own `lifecycle` block. There it means "whenever Terraform would destroy this, forget it instead" — while the resource block still exists. Once you delete the block, the setting goes with it, so the `removed` block is still how you stop managing a resource. See [TF-302: `destroy = false`](../../../TF-300-advanced/TF-302-conditions-checks/3-lifecycle-arguments/README.md#-destroy--false-terraform-116).
+
 ---
 
 ## 🔬 Use Case 1: Stop Managing a Resource (Keep It Running)

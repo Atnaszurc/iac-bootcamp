@@ -10,7 +10,7 @@
 variable "db_password" {
   type        = string
   description = "Database password — ephemeral, never stored in state"
-  ephemeral   = true  # Terraform 1.10+
+  ephemeral   = true # Terraform 1.10+
 
   # Note: ephemeral variables cannot have validation blocks that reference
   # non-ephemeral values, but basic validation is allowed
@@ -23,8 +23,8 @@ variable "db_password" {
 variable "api_token" {
   type        = string
   description = "API token for external service — ephemeral, never stored in state"
-  ephemeral   = true  # Terraform 1.10+
-  default     = null  # Optional — may not always be provided
+  ephemeral   = true # Terraform 1.10+
+  default     = null # Optional — may not always be provided
 }
 
 # ─────────────────────────────────────────────────────────────────────────────

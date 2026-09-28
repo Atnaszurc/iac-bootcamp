@@ -19,7 +19,7 @@ or other external services are documented but not included in the automated suit
 
 ### Prerequisites
 
-- **Terraform >= 1.6.0** (test framework was introduced in 1.6)
+- **Terraform >= 1.16.0** to run the full suite (the test framework itself arrived in 1.6, but TF-301 Section 7 and TF-307 use 1.16 features)
 - **Linux, macOS, or WSL2** (Libvirt provider requires Unix-like environment)
 
 > **Windows Users**: You must use WSL2. The Libvirt provider does not work on native Windows.
@@ -27,8 +27,10 @@ or other external services are documented but not included in the automated suit
 ```bash
 # Verify your Terraform version
 terraform version
-# Should show: Terraform v1.6.0 or higher
+# Should show: Terraform v1.16.0 or higher
 ```
+
+> 💡 **What the tests do and don't prove**: the libvirt tests use `mock_provider`, so they check your configuration against the real provider schema without a libvirt daemon. They cannot prove a VM boots. Terraform also silently drops unknown keys inside nested attributes (e.g. `devices.disk` instead of `devices.disks`), so the libvirt tests assert that disks and interfaces are actually present in the plan.
 
 ### Run All Tests
 
@@ -315,7 +317,7 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "~1.9"
+          terraform_version: "~1.16"
 
       - name: Run Terraform tests
         working-directory: hashi-training
@@ -328,7 +330,7 @@ jobs:
 
 ```yaml
 terraform-tests:
-  image: hashicorp/terraform:1.9
+  image: hashicorp/terraform:1.16
   script:
     - cd hashi-training
     - chmod +x scripts/run-tests.sh

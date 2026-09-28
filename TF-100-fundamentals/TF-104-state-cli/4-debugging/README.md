@@ -50,8 +50,8 @@ terraform graph
 Using outputs is a great way to debug your code. You can use the `terraform output` command to print out the values of your outputs. And add extra outputs to your code to help you debug.
 
 ```hcl
-output "virtual_machine_id" {
-  value = azurerm_linux_virtual_machine.this.id
+output "virtual_machine_uuid" {
+  value = libvirt_domain.vm.uuid
 }
 ```
 

@@ -160,10 +160,10 @@ output "infrastructure_summary" {
       url        = "http://${google_compute_global_forwarding_rule.app.ip_address}"
     }
     managed_instance_group = {
-      name          = google_compute_region_instance_group_manager.app.name
-      target_size   = var.mig_target_size
-      min_replicas  = var.autoscaler_min_replicas
-      max_replicas  = var.autoscaler_max_replicas
+      name           = google_compute_region_instance_group_manager.app.name
+      target_size    = var.mig_target_size
+      min_replicas   = var.autoscaler_min_replicas
+      max_replicas   = var.autoscaler_max_replicas
       instance_group = google_compute_region_instance_group_manager.app.instance_group
     }
     database = var.enable_cloud_sql ? {
@@ -246,7 +246,7 @@ output "access_instructions" {
       List backups:
         gcloud sql backups list --instance=${google_sql_database_instance.main[0].name}
     SQL
-    : "Cloud SQL is disabled"}
+: "Cloud SQL is disabled"}
     
     Monitoring:
       View load balancer metrics:

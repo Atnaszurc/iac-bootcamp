@@ -79,8 +79,8 @@ locals {
   }
 
   # ── zipmap() ──────────────────────────────────────────────────────────────
-  server_names = ["web-01", "api-01", "db-01"]
-  ip_addresses = ["10.0.0.10", "10.0.0.20", "10.0.0.30"]
+  server_names  = ["web-01", "api-01", "db-01"]
+  ip_addresses  = ["10.0.0.10", "10.0.0.20", "10.0.0.30"]
   server_ip_map = zipmap(local.server_names, local.ip_addresses)
 
   # ── distinct(), compact(), concat() ───────────────────────────────────────
@@ -120,17 +120,17 @@ locals {
   availability_zones = ["us-east-1a", "us-east-1b", "us-east-1c"]
 
   # Positive indices (traditional)
-  first_az  = element(local.availability_zones, 0)   # "us-east-1a"
-  second_az = element(local.availability_zones, 1)   # "us-east-1b"
+  first_az  = element(local.availability_zones, 0) # "us-east-1a"
+  second_az = element(local.availability_zones, 1) # "us-east-1b"
 
   # Negative indices (Terraform 1.10+)
-  last_az        = element(local.availability_zones, -1)  # "us-east-1c"
-  second_last_az = element(local.availability_zones, -2)  # "us-east-1b"
-  third_last_az  = element(local.availability_zones, -3)  # "us-east-1a"
+  last_az        = element(local.availability_zones, -1) # "us-east-1c"
+  second_last_az = element(local.availability_zones, -2) # "us-east-1b"
+  third_last_az  = element(local.availability_zones, -3) # "us-east-1a"
 
   # Wrapping behavior — index wraps around list length
   # element(list, length(list)) == element(list, 0) == first item
-  wrapped_az = element(local.availability_zones, 3)   # "us-east-1a" (wraps)
+  wrapped_az  = element(local.availability_zones, 3)  # "us-east-1a" (wraps)
   wrapped_neg = element(local.availability_zones, -4) # "us-east-1c" (wraps back)
 
   # Real-world use case: distribute resources across AZs using modulo-like behavior
@@ -145,7 +145,7 @@ locals {
 
   # Use negative index to get the "last" AZ for a special resource
   # (e.g., a management node always in the last AZ)
-  management_az = element(local.availability_zones, -1)  # Always last AZ
+  management_az = element(local.availability_zones, -1) # Always last AZ
 }
 
 # ─────────────────────────────────────────────────────────────────────────────

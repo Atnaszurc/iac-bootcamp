@@ -133,7 +133,7 @@ module "network" {
 # VM module uses network module output
 module "vm" {
   source     = "./modules/vm"
-  network_id = module.network.network_id
+  network_name = module.network.network_name
 }
 ```
 
@@ -216,37 +216,51 @@ cd modules/libvirt-network
 ```hcl
 # modules/libvirt-network/main.tf
 terraform {
+  required_version = ">= 1.14"
+
   required_providers {
     libvirt = {
       source  = "dmacvicar/libvirt"
-      version = "~> 0.7"
+      version = "~> 0.9"
     }
   }
 }
 
+locals {
+  prefix_length = tonumber(split("/", var.cidr)[1])
+}
+
 resource "libvirt_network" "this" {
   name      = var.network_name
-  mode      = var.network_mode
-  domain    = var.domain
-  addresses = var.addresses
-  
   autostart = var.autostart
-  
-  dynamic "dns" {
-    for_each = var.enable_dns ? [1] : []
-    content {
-      enabled = true
+
+  # libvirt provider 0.9.x uses nested ATTRIBUTES (forward = { ... }), not
+  # blocks, so optional parts are a conditional that yields an object or null.
+  # An isolated network is simply one without forward.
+  forward = var.network_mode == "isolated" ? null : { mode = var.network_mode }
+
+  domain = { name = var.domain }
+
+  dns = { enable = var.enable_dns ? "yes" : "no" }
+
+  ips = [
+    {
+      address = cidrhost(var.cidr, 1)
+      prefix  = local.prefix_length
+      dhcp = var.enable_dhcp ? {
+        ranges = [
+          {
+            start = cidrhost(var.cidr, 100)
+            end   = cidrhost(var.cidr, 200)
+          }
+        ]
+      } : null
     }
-  }
-  
-  dynamic "dhcp" {
-    for_each = var.enable_dhcp ? [1] : []
-    content {
-      enabled = true
-    }
-  }
+  ]
 }
 ```
+
+> 💡 **Why no `dynamic` blocks?** In libvirt provider 0.9.x, `forward`, `dns` and `dhcp` are nested *attributes* (`dns = { ... }`), not blocks (`dns { ... }`). `dynamic` only generates blocks. For an optional attribute, use a conditional that returns either an object or `null`, as above.
 
 #### 3. Create `variables.tf`
 
@@ -255,7 +269,7 @@ resource "libvirt_network" "this" {
 variable "network_name" {
   description = "Name of the libvirt network"
   type        = string
-  
+
   validation {
     condition     = length(var.network_name) > 0 && length(var.network_name) <= 64
     error_message = "Network name must be between 1 and 64 characters"
@@ -263,13 +277,13 @@ variable "network_name" {
 }
 
 variable "network_mode" {
-  description = "Network mode (nat, route, bridge, none)"
+  description = "Forwarding mode: nat, route or isolated"
   type        = string
   default     = "nat"
-  
+
   validation {
-    condition     = contains(["nat", "route", "bridge", "none"], var.network_mode)
-    error_message = "Network mode must be one of: nat, route, bridge, none"
+    condition     = contains(["nat", "route", "isolated"], var.network_mode)
+    error_message = "Network mode must be one of: nat, route, isolated"
   }
 }
 
@@ -279,10 +293,15 @@ variable "domain" {
   default     = "local"
 }
 
-variable "addresses" {
-  description = "List of IP address ranges for the network"
-  type        = list(string)
-  default     = ["10.17.3.0/24"]
+variable "cidr" {
+  description = "IPv4 range for the network. The host gets the first address, DHCP hands out .100-.200"
+  type        = string
+  default     = "10.17.3.0/24"
+
+  validation {
+    condition     = can(cidrnetmask(var.cidr))
+    error_message = "cidr must be a valid IPv4 CIDR block, e.g. 10.17.3.0/24"
+  }
 }
 
 variable "autostart" {
@@ -309,23 +328,18 @@ variable "enable_dhcp" {
 ```hcl
 # modules/libvirt-network/outputs.tf
 output "network_id" {
-  description = "ID of the created network"
+  description = "ID (UUID) of the created network"
   value       = libvirt_network.this.id
 }
 
 output "network_name" {
-  description = "Name of the created network"
+  description = "Name of the created network. VM interfaces reference networks by name."
   value       = libvirt_network.this.name
 }
 
-output "network_bridge" {
-  description = "Bridge name of the network"
-  value       = libvirt_network.this.bridge
-}
-
-output "addresses" {
-  description = "IP address ranges of the network"
-  value       = libvirt_network.this.addresses
+output "cidr" {
+  description = "IP range of the network"
+  value       = var.cidr
 }
 ```
 
@@ -334,12 +348,12 @@ output "addresses" {
 ```hcl
 # modules/libvirt-network/versions.tf
 terraform {
-  required_version = ">= 1.0"
-  
+  required_version = ">= 1.14"
+
   required_providers {
     libvirt = {
       source  = "dmacvicar/libvirt"
-      version = "~> 0.7"
+      version = "~> 0.9"
     }
   }
 }
@@ -360,7 +374,7 @@ module "network" {
   
   network_name = "my-network"
   network_mode = "nat"
-  addresses    = ["10.17.3.0/24"]
+  cidr         = "10.17.3.0/24"
 }
 ```
 
@@ -369,15 +383,19 @@ module "network" {
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
 | network_name | Name of the network | string | - | yes |
-| network_mode | Network mode | string | "nat" | no |
-| addresses | IP address ranges | list(string) | ["10.17.3.0/24"] | no |
+| network_mode | nat, route or isolated | string | "nat" | no |
+| cidr | IP range of the network | string | "10.17.3.0/24" | no |
+| domain | DNS domain | string | "local" | no |
+| enable_dns | Enable DNS | bool | true | no |
+| enable_dhcp | Enable DHCP (.100-.200) | bool | true | no |
 
 ## Outputs
 
 | Name | Description |
 |------|-------------|
 | network_id | ID of the created network |
-| network_name | Name of the network |
+| network_name | Name of the network (VMs reference networks by name) |
+| cidr | IP range of the network |
 ```
 
 #### 7. Use the Module
@@ -390,7 +408,7 @@ terraform {
   required_providers {
     libvirt = {
       source  = "dmacvicar/libvirt"
-      version = "~> 0.7"
+      version = "~> 0.9"
     }
   }
 }
@@ -401,18 +419,19 @@ provider "libvirt" {
 
 module "app_network" {
   source = "./modules/libvirt-network"
-  
+
   network_name = "app-network"
   network_mode = "nat"
-  addresses    = ["10.20.0.0/24"]
+  cidr         = "10.20.0.0/24"
 }
 
 module "db_network" {
   source = "./modules/libvirt-network"
-  
+
   network_name = "db-network"
-  network_mode = "nat"
-  addresses    = ["10.30.0.0/24"]
+  network_mode = "isolated"
+  cidr         = "10.30.0.0/24"
+  enable_dhcp  = false
 }
 
 output "app_network_id" {
@@ -474,88 +493,154 @@ terraform {
   required_providers {
     libvirt = {
       source  = "dmacvicar/libvirt"
-      version = "~> 0.7"
+      version = "~> 0.9"
     }
   }
 }
 
-# Network
+# Network: only created when no existing network_name is passed in
 resource "libvirt_network" "vm_network" {
+  count = var.network_name == null ? 1 : 0
+
   name      = "${var.vm_name}-network"
-  mode      = "nat"
-  addresses = [var.network_cidr]
   autostart = true
-  
-  dns {
-    enabled = true
-  }
-  
-  dhcp {
-    enabled = true
-  }
+
+  forward = { mode = "nat" }
+  dns     = { enable = "yes" }
+
+  ips = [
+    {
+      address = cidrhost(var.network_cidr, 1)
+      prefix  = tonumber(split("/", var.network_cidr)[1])
+      dhcp = {
+        ranges = [
+          {
+            start = cidrhost(var.network_cidr, 100)
+            end   = cidrhost(var.network_cidr, 200)
+          }
+        ]
+      }
+    }
+  ]
+}
+
+locals {
+  network_name = var.network_name != null ? var.network_name : libvirt_network.vm_network[0].name
 }
 
 # Storage Pool
 resource "libvirt_pool" "vm_pool" {
-  name = "${var.vm_name}-pool"
-  type = "dir"
-  path = "/var/lib/libvirt/images/${var.vm_name}"
+  name   = "${var.vm_name}-pool"
+  type   = "dir"
+  target = { path = "/var/lib/libvirt/images/${var.vm_name}" }
 }
 
-# Base Volume (from base image)
+# Base Volume (downloaded or copied from base_image_url)
 resource "libvirt_volume" "base" {
-  name   = "${var.vm_name}-base.qcow2"
-  pool   = libvirt_pool.vm_pool.name
-  source = var.base_image_path
-  format = "qcow2"
+  name = "${var.vm_name}-base.qcow2"
+  pool = libvirt_pool.vm_pool.name
+  create = {
+    content = { url = var.base_image_url }
+  }
+  target = { format = { type = "qcow2" } }
 }
 
-# VM Volume (from base)
+# VM Volume (copy-on-write clone of the base)
 resource "libvirt_volume" "vm" {
-  name           = "${var.vm_name}.qcow2"
-  pool           = libvirt_pool.vm_pool.name
-  base_volume_id = libvirt_volume.base.id
-  size           = var.disk_size_bytes
-  format         = "qcow2"
+  name     = "${var.vm_name}.qcow2"
+  pool     = libvirt_pool.vm_pool.name
+  capacity = var.disk_size_bytes
+  backing_store = {
+    path   = libvirt_volume.base.path
+    format = { type = "qcow2" }
+  }
+  target = { format = { type = "qcow2" } }
 }
 
-# Cloud-init disk
+# Cloud-init disk (built locally) ...
 resource "libvirt_cloudinit_disk" "commoninit" {
   name      = "${var.vm_name}-cloudinit.iso"
-  pool      = libvirt_pool.vm_pool.name
   user_data = var.cloud_init_user_data
+  meta_data = yamlencode({
+    instance-id    = var.vm_name
+    local-hostname = var.vm_name
+  })
+}
+
+# ... and uploaded to the pool so the VM can mount it
+resource "libvirt_volume" "cloudinit" {
+  name = "${var.vm_name}-cloudinit.iso"
+  pool = libvirt_pool.vm_pool.name
+  create = {
+    content = { url = libvirt_cloudinit_disk.commoninit.path }
+  }
 }
 
 # Virtual Machine
 resource "libvirt_domain" "vm" {
-  name   = var.vm_name
-  memory = var.memory_mb
-  vcpu   = var.vcpu_count
-  
-  cloudinit = libvirt_cloudinit_disk.commoninit.id
-  
-  network_interface {
-    network_id     = libvirt_network.vm_network.id
-    wait_for_lease = true
+  name        = var.vm_name
+  memory      = var.memory_mb
+  memory_unit = "MiB"
+  vcpu        = var.vcpu_count
+  type        = "kvm"
+  running     = true
+  autostart   = var.autostart
+
+  os = {
+    type         = "hvm"
+    type_arch    = "x86_64"
+    type_machine = "q35"
   }
-  
-  disk {
-    volume_id = libvirt_volume.vm.id
+
+  devices = {
+    disks = [
+      {
+        source = {
+          volume = {
+            pool   = libvirt_volume.vm.pool
+            volume = libvirt_volume.vm.name
+          }
+        }
+        target = { dev = "vda", bus = "virtio" }
+        driver = { type = "qcow2" }
+      },
+      {
+        device = "cdrom"
+        source = {
+          volume = {
+            pool   = libvirt_volume.cloudinit.pool
+            volume = libvirt_volume.cloudinit.name
+          }
+        }
+        target = { dev = "sda", bus = "sata" }
+      }
+    ]
+
+    interfaces = [
+      {
+        model       = { type = "virtio" }
+        source      = { network = { network = local.network_name } }
+        wait_for_ip = { source = "lease" }
+      }
+    ]
+
+    consoles = [
+      {
+        target = { type = "serial", port = 0 }
+      }
+    ]
+
+    graphics = [
+      {
+        spice = { auto_port = true, listen = "127.0.0.1" }
+      }
+    ]
   }
-  
-  console {
-    type        = "pty"
-    target_type = "serial"
-    target_port = "0"
-  }
-  
-  graphics {
-    type        = "spice"
-    listen_type = "address"
-    autoport    = true
-  }
-  
-  autostart = var.autostart
+}
+
+data "libvirt_domain_interface_addresses" "vm" {
+  domain = libvirt_domain.vm.name
+  source = "lease"
 }
 ```
 
@@ -566,7 +651,7 @@ resource "libvirt_domain" "vm" {
 variable "vm_name" {
   description = "Name of the virtual machine"
   type        = string
-  
+
   validation {
     condition     = can(regex("^[a-z0-9-]+$", var.vm_name))
     error_message = "VM name must contain only lowercase letters, numbers, and hyphens"
@@ -574,13 +659,13 @@ variable "vm_name" {
 }
 
 variable "memory_mb" {
-  description = "Memory in MB"
+  description = "Memory in MiB"
   type        = number
   default     = 512
-  
+
   validation {
     condition     = var.memory_mb >= 256 && var.memory_mb <= 16384
-    error_message = "Memory must be between 256 MB and 16 GB"
+    error_message = "Memory must be between 256 MiB and 16 GiB"
   }
 }
 
@@ -588,7 +673,7 @@ variable "vcpu_count" {
   description = "Number of virtual CPUs"
   type        = number
   default     = 1
-  
+
   validation {
     condition     = var.vcpu_count >= 1 && var.vcpu_count <= 8
     error_message = "vCPU count must be between 1 and 8"
@@ -601,19 +686,25 @@ variable "disk_size_bytes" {
   default     = 10737418240 # 10 GB
 }
 
+variable "network_name" {
+  description = "Existing network to attach the VM to. Leave null to create a network from network_cidr."
+  type        = string
+  default     = null
+}
+
 variable "network_cidr" {
-  description = "Network CIDR block"
+  description = "CIDR block for the network the module creates (ignored when network_name is set)"
   type        = string
   default     = "10.17.3.0/24"
-  
+
   validation {
     condition     = can(cidrhost(var.network_cidr, 0))
     error_message = "Must be a valid CIDR block"
   }
 }
 
-variable "base_image_path" {
-  description = "Path to base image"
+variable "base_image_url" {
+  description = "URL or local path of the base cloud image (qcow2)"
   type        = string
 }
 
@@ -630,7 +721,7 @@ variable "cloud_init_user_data" {
 }
 
 variable "autostart" {
-  description = "Start VM automatically"
+  description = "Start the VM when the host boots"
   type        = bool
   default     = true
 }
@@ -641,8 +732,8 @@ variable "autostart" {
 ```hcl
 # modules/libvirt-vm-complete/outputs.tf
 output "vm_id" {
-  description = "ID of the virtual machine"
-  value       = libvirt_domain.vm.id
+  description = "UUID of the virtual machine (libvirt_domain.id is libvirt's runtime number)"
+  value       = libvirt_domain.vm.uuid
 }
 
 output "vm_name" {
@@ -650,14 +741,14 @@ output "vm_name" {
   value       = libvirt_domain.vm.name
 }
 
-output "network_id" {
-  description = "ID of the network"
-  value       = libvirt_network.vm_network.id
+output "network_name" {
+  description = "Name of the network (VM interfaces reference networks by name)"
+  value       = local.network_name
 }
 
 output "ip_address" {
-  description = "IP address of the VM"
-  value       = try(libvirt_domain.vm.network_interface[0].addresses[0], "")
+  description = "IP address of the VM, read from the DHCP leases"
+  value       = try(data.libvirt_domain_interface_addresses.vm.interfaces[0].addrs[0].addr, null)
 }
 
 output "pool_name" {
@@ -672,14 +763,14 @@ output "pool_name" {
 # Root main.tf
 module "web_server" {
   source = "./modules/libvirt-vm-complete"
-  
-  vm_name          = "web-server"
-  memory_mb        = 1024
-  vcpu_count       = 2
-  disk_size_bytes  = 21474836480 # 20 GB
-  network_cidr     = "10.20.0.0/24"
-  base_image_path  = "/var/lib/libvirt/images/ubuntu-22.04.qcow2"
-  
+
+  vm_name         = "web-server"
+  memory_mb       = 1024
+  vcpu_count      = 2
+  disk_size_bytes = 21474836480 # 20 GB
+  network_cidr    = "10.20.0.0/24"
+  base_image_url  = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+
   cloud_init_user_data = <<-EOF
     #cloud-config
     users:
@@ -727,13 +818,15 @@ Each tier has its own network.
 
 #### Solution
 
+One design question first: `libvirt-vm-complete` from Lab 2 creates its own network for every VM. Two web VMs would then create two networks with the same CIDR, which libvirt refuses to run side by side. The module therefore has an optional `network_name` input: pass an existing network and the module skips creating one (`count = var.network_name == null ? 1 : 0`). This "bring your own, or I'll make one" pattern is common in reusable modules.
+
 ```hcl
 # Root main.tf
 terraform {
   required_providers {
     libvirt = {
       source  = "dmacvicar/libvirt"
-      version = "~> 0.7"
+      version = "~> 0.9"
     }
   }
 }
@@ -742,80 +835,84 @@ provider "libvirt" {
   uri = "qemu:///system"
 }
 
+locals {
+  base_image_url = "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+}
+
 # Networks for each tier
 module "web_network" {
   source = "./modules/libvirt-network"
-  
+
   network_name = "web-tier"
-  addresses    = ["10.10.0.0/24"]
+  cidr         = "10.10.0.0/24"
 }
 
 module "app_network" {
   source = "./modules/libvirt-network"
-  
+
   network_name = "app-tier"
-  addresses    = ["10.20.0.0/24"]
+  cidr         = "10.40.0.0/24"
 }
 
 module "db_network" {
   source = "./modules/libvirt-network"
-  
+
   network_name = "db-tier"
-  addresses    = ["10.30.0.0/24"]
+  cidr         = "10.50.0.0/24"
 }
 
-# Web tier VMs
+# Web tier VMs: attach to the shared tier network instead of creating one each
 module "web_vm_1" {
   source = "./modules/libvirt-vm-complete"
-  
-  vm_name         = "web-01"
-  memory_mb       = 1024
-  vcpu_count      = 2
-  network_cidr    = "10.10.0.0/24"
-  base_image_path = "/var/lib/libvirt/images/ubuntu-22.04.qcow2"
+
+  vm_name        = "web-01"
+  memory_mb      = 1024
+  vcpu_count     = 2
+  network_name   = module.web_network.network_name
+  base_image_url = local.base_image_url
 }
 
 module "web_vm_2" {
   source = "./modules/libvirt-vm-complete"
-  
-  vm_name         = "web-02"
-  memory_mb       = 1024
-  vcpu_count      = 2
-  network_cidr    = "10.10.0.0/24"
-  base_image_path = "/var/lib/libvirt/images/ubuntu-22.04.qcow2"
+
+  vm_name        = "web-02"
+  memory_mb      = 1024
+  vcpu_count     = 2
+  network_name   = module.web_network.network_name
+  base_image_url = local.base_image_url
 }
 
 # App tier VMs
 module "app_vm_1" {
   source = "./modules/libvirt-vm-complete"
-  
-  vm_name         = "app-01"
-  memory_mb       = 2048
-  vcpu_count      = 2
-  network_cidr    = "10.20.0.0/24"
-  base_image_path = "/var/lib/libvirt/images/ubuntu-22.04.qcow2"
+
+  vm_name        = "app-01"
+  memory_mb      = 2048
+  vcpu_count     = 2
+  network_name   = module.app_network.network_name
+  base_image_url = local.base_image_url
 }
 
 module "app_vm_2" {
   source = "./modules/libvirt-vm-complete"
-  
-  vm_name         = "app-02"
-  memory_mb       = 2048
-  vcpu_count      = 2
-  network_cidr    = "10.20.0.0/24"
-  base_image_path = "/var/lib/libvirt/images/ubuntu-22.04.qcow2"
+
+  vm_name        = "app-02"
+  memory_mb      = 2048
+  vcpu_count     = 2
+  network_name   = module.app_network.network_name
+  base_image_url = local.base_image_url
 }
 
 # Database tier VM
 module "db_vm" {
   source = "./modules/libvirt-vm-complete"
-  
+
   vm_name         = "db-01"
   memory_mb       = 4096
   vcpu_count      = 4
   disk_size_bytes = 53687091200 # 50 GB
-  network_cidr    = "10.30.0.0/24"
-  base_image_path = "/var/lib/libvirt/images/ubuntu-22.04.qcow2"
+  network_name    = module.db_network.network_name
+  base_image_url  = local.base_image_url
 }
 
 # Outputs
@@ -946,7 +1043,7 @@ module "network" {
 
 module "vm" {
   source     = "./modules/vm"
-  network_id = module.network.network_id  # Using output
+  network_name = module.network.network_name  # Using output
 }
 ```
 </details>
@@ -1107,17 +1204,17 @@ run "create_network" {
 ### 8. Use Data Sources
 
 ```hcl
-# Fetch existing resources instead of hardcoding
-data "libvirt_network" "default" {
-  name = "default"
-}
+# Look things up instead of hardcoding them
+data "libvirt_node_info" "host" {}
 
-resource "libvirt_domain" "vm" {
-  network_interface {
-    network_id = data.libvirt_network.default.id
-  }
+locals {
+  host_memory_mb = floor(data.libvirt_node_info.host.memory_total_kb / 1024)
+  # Never give a single VM more than a quarter of the host's memory
+  vm_memory_mb = min(var.memory_mb, floor(local.host_memory_mb / 4))
 }
 ```
+
+Which data sources exist depends entirely on the provider. The libvirt provider 0.9.x has only a handful (`libvirt_node_info`, `libvirt_node_devices`, `libvirt_node_device_info`, `libvirt_domain_interface_addresses`) and no network data source. That's less of a loss than it sounds: VM interfaces reference networks by name, so an existing network like `default` is just the string `"default"`.
 
 ### 9. Follow DRY Principle
 
@@ -1202,7 +1299,7 @@ module "networks" { }
 
 # Layer 2: Compute (depends on Layer 1)
 module "vms" {
-  network_id = module.networks.network_id
+  network_name = module.networks.network_name
 }
 
 # Layer 3: Applications (depends on Layer 2)
@@ -1264,62 +1361,35 @@ module "backup" {
 
 ## 🆕 Dynamic Module Sources (Terraform 1.15+)
 
-**New Feature**: Terraform 1.15 introduces the ability to use variables and locals in module `source` and `version` attributes, enabling dynamic module sourcing and version management.
-
-### Overview
-
-Previously, module sources and versions had to be literal strings. Now you can use variables and locals for:
-- Environment-specific module versions
-- Centralized version management
-- Dynamic module selection
-- CI/CD integration
-- Multi-tenant configurations
+**New Feature**: Since Terraform 1.15, a module's `source` and `version` can use input variables declared with `const = true`, and locals built only from those and literals.
 
 ### Basic Example
 
 ```hcl
-variable "module_version" {
-  default = "5.0.0"
+variable "network_module_version" {
+  type    = string
+  default = "v1"
+  const   = true # usable during terraform init
 }
 
-module "vpc" {
-  source  = var.module_source
-  version = var.module_version
-  
-  # Module inputs...
+module "network" {
+  source = "./modules/network/${var.network_module_version}"
 }
 ```
 
-### Use Cases
+`terraform init` installs modules before any plan, so it has to know every `source` and `version` up front. That's what `const` promises: a value known from the start (default, `-var`, `TF_VAR_`, `.tfvars`) that doesn't depend on anything computed during plan. An ordinary variable in `source` fails with *Only literal values and const variables can be evaluated during init*.
 
-1. **Environment-Specific Versions**: Different module versions per environment
-2. **Centralized Version Management**: Single source of truth for all module versions
-3. **Dynamic Module Selection**: Choose modules based on conditions
-4. **CI/CD Integration**: Pass module versions from pipeline variables
-5. **Testing**: Easy switching between module versions
-6. **Multi-Tenancy**: Different module sources per tenant
+### Things to Know
+
+- `plan` and `apply` must use the same values as `init`, or Terraform stops with *Module source has changed*
+- `version` only applies to registry modules
+- `terraform test` uses the modules `init` installed: a run block that changes a `const` variable doesn't switch modules, and doesn't warn
 
 ### Hands-On Lab
 
-See the complete lab with 12 practical examples:
-- **Location**: `dynamic-module-sources/`
-- **Examples**: Environment versioning, version matrix, canary deployments, tenant configs, CI/CD integration
-- **Tests**: Comprehensive test coverage for all scenarios
-
-### Key Benefits
-
-- ✅ **Flexibility**: Dynamic module selection based on variables
-- ✅ **Consistency**: Centralized version management
-- ✅ **Automation**: CI/CD-driven module versioning
-- ✅ **Testing**: Easy version switching for testing
-- ✅ **Multi-Environment**: Different versions per environment
-
-### Learn More
-
-For detailed documentation, examples, and best practices, see:
-- [Dynamic Module Sources README](dynamic-module-sources/README.md)
-- [Example Implementation](dynamic-module-sources/example/)
-
+- **Location**: [`dynamic-module-sources/`](dynamic-module-sources/README.md)
+- **Scenario**: two versions of a network module, picked per environment (dev tries v2, prod stays on v1), and a registry module version from a `const` variable
+- **Runs locally**: no provider or cloud account needed
 
 ## 📂 Supplemental Content
 

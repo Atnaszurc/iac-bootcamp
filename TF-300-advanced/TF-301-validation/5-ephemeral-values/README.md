@@ -97,8 +97,8 @@ locals {
 }
 
 # ✅ In write-only resource attributes (provider must support it — Terraform 1.11+)
-# resource "aws_db_instance" "main" {
-#   password_wo = var.db_password  # write-only attribute
+# resource "tls_self_signed_cert" "web" {
+#   private_key_pem_wo = var.private_key_pem  # write-only attribute (see TF-302 Section 4)
 # }
 
 # ❌ In regular resource attributes (would be stored in state)
@@ -250,6 +250,7 @@ example/
 - **[3-sensitive-values/](../3-sensitive-values/)** — `sensitive = true` for display redaction
 - **[TF-302: Write-Only Attributes](../../TF-302-conditions-checks/4-write-only-attributes/)** — provider-defined attributes that accept ephemeral values (Terraform 1.11+)
 - **[TF-306: ephemeralasnull() function](../../TF-306-functions/)** — function reference
+- **[7-capturing-ephemeral-values/](../7-capturing-ephemeral-values/)** — when you *do* need an ephemeral value in state: `terraform_data` `store` (Terraform 1.16+)
 
 ---
 

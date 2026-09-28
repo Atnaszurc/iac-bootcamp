@@ -18,11 +18,11 @@ variable "servers" {
     enabled = bool
   }))
   default = [
-    { name = "web-01",   role = "frontend", enabled = true  },
-    { name = "web-02",   role = "frontend", enabled = false },
-    { name = "api-01",   role = "backend",  enabled = true  },
-    { name = "db-01",    role = "database", enabled = true  },
-    { name = "cache-01", role = "cache",    enabled = false },
+    { name = "web-01", role = "frontend", enabled = true },
+    { name = "web-02", role = "frontend", enabled = false },
+    { name = "api-01", role = "backend", enabled = true },
+    { name = "db-01", role = "database", enabled = true },
+    { name = "cache-01", role = "cache", enabled = false },
   ]
 }
 
@@ -58,21 +58,21 @@ locals {
   # --- Map transformations ---
 
   # Map of name => role (all servers)
-  name_to_role = {for s in var.servers : s.name => s.role}
+  name_to_role = { for s in var.servers : s.name => s.role }
 
   # Map of name => role (enabled only)
-  enabled_map = {for s in var.servers : s.name => s.role if s.enabled}
+  enabled_map = { for s in var.servers : s.name => s.role if s.enabled }
 
   # Map of name => full server object (enabled only)
-  enabled_servers = {for s in var.servers : s.name => s if s.enabled}
+  enabled_servers = { for s in var.servers : s.name => s if s.enabled }
 
   # --- Map iteration ---
 
   # Add environment prefix to all tag keys
-  prefixed_tags = {for k, v in var.base_tags : "${var.environment}_${k}" => v}
+  prefixed_tags = { for k, v in var.base_tags : "${var.environment}_${k}" => v }
 
   # Uppercase all tag values
-  upper_tag_values = {for k, v in var.base_tags : k => upper(v)}
+  upper_tag_values = { for k, v in var.base_tags : k => upper(v) }
 
   # Create key=value strings from tags
   tag_strings = [for k, v in var.base_tags : "${k}=${v}"]

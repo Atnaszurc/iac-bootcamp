@@ -65,8 +65,8 @@ mock_provider "local" {
 # ─────────────────────────────────────────────────────────────────────────────
 
 variables {
-  environment  = var.test_environment   # Reference file-level variable (1.13+)
-  log_level    = var.test_log_level     # Reference file-level variable (1.13+)
+  environment  = var.test_environment # Reference file-level variable (1.13+)
+  log_level    = var.test_log_level   # Reference file-level variable (1.13+)
   enable_debug = false
   tags = {
     Team    = "platform"
@@ -244,8 +244,8 @@ run "use_file_level_variables" {
 
   # These reference the file-level variables defined at the top of this file
   variables {
-    environment = var.test_environment  # "staging" from file-level variable
-    log_level   = var.test_log_level    # "debug" from file-level variable
+    environment = var.test_environment # "staging" from file-level variable
+    log_level   = var.test_log_level   # "debug" from file-level variable
     services = {
       frontend = {
         port    = 3000

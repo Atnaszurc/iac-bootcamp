@@ -5,8 +5,39 @@
 #
 # Teaching focus: for_each over map, per-VM disk/cloud-init/domain resources
 
-# mock_provider bypasses the real libvirt schema so tests run without a daemon
+# mock_provider fakes the provider's responses so tests run without a daemon.
+# It still uses the real schema — but Terraform silently drops unknown keys
+# inside nested attributes, so plan_vm_devices asserts the devices survived.
 mock_provider "libvirt" {}
+
+run "plan_vm_devices" {
+  command = plan
+
+  assert {
+    condition     = length(libvirt_domain.vm["web"].devices.disks) == 2
+    error_message = "Each VM should have a system disk and a cloud-init CD-ROM"
+  }
+
+  assert {
+    condition     = libvirt_domain.vm["db"].devices.disks[0].source.volume.volume == "tf103-vms-db.qcow2"
+    error_message = "The db VM should boot from its own disk"
+  }
+
+  assert {
+    condition     = libvirt_domain.vm["web"].devices.interfaces[0].source.network.network == "tf103-vms-vm-net"
+    error_message = "VMs should be attached to the project network"
+  }
+
+  assert {
+    condition     = libvirt_domain.vm["db"].memory == 2048 && libvirt_domain.vm["db"].memory_unit == "MiB"
+    error_message = "db VM should get 2048 MiB of memory"
+  }
+
+  assert {
+    condition     = libvirt_network.vm_network.forward.mode == "nat"
+    error_message = "VM network should use NAT"
+  }
+}
 
 run "plan_default_vms" {
   command = plan

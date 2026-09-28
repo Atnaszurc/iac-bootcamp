@@ -226,7 +226,7 @@ output "access_instructions" {
           --plaintext-file=- \
           --ciphertext-file=encrypted.bin
     KMS
-    : ""}
+: ""}
     
     Persistent Disks:
       Standard: ${google_compute_disk.standard.name}

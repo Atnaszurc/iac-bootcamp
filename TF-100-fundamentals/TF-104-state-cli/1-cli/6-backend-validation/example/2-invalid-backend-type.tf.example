@@ -1,21 +1,19 @@
-# This file demonstrates an INVALID backend configuration
-# Rename to .tf to test the validation error
-# 
-# Error: Backend type "s4" does not exist (typo - should be "s3")
+# Backend validation: a typo in the backend TYPE
+#
+# `terraform validate` catches this, without `terraform init`:
+#
+#   mkdir -p try && cp 2-invalid-backend-type.tf.example try/main.tf
+#   terraform -chdir=try validate
+#
+#   Error: Unsupported backend type
+#     on main.tf line 14, in terraform:
+#     14:   backend "s4" {
+#   There is no backend type named "s4".
 
 terraform {
-  required_version = ">= 1.15.0"
-
-  # Invalid backend type - "s4" doesn't exist
-  backend "s4" {
+  backend "s4" { # typo: should be "s3"
     bucket = "my-terraform-state"
     key    = "terraform.tfstate"
     region = "us-east-1"
   }
 }
-
-# Expected error when running terraform validate:
-# Error: Invalid backend type
-#   on 2-invalid-backend-type.tf line 9, in terraform:
-#    9:   backend "s4" {
-# Backend "s4" does not exist. Did you mean "s3"?

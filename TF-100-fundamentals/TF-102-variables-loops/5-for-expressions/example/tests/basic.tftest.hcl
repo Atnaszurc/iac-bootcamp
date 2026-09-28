@@ -122,9 +122,9 @@ run "custom_server_list_filtering" {
   variables {
     environment = "staging"
     servers = [
-      { name = "app-01", role = "backend",  enabled = true  },
-      { name = "app-02", role = "backend",  enabled = false },
-      { name = "app-03", role = "backend",  enabled = true  },
+      { name = "app-01", role = "backend", enabled = true },
+      { name = "app-02", role = "backend", enabled = false },
+      { name = "app-03", role = "backend", enabled = true },
     ]
   }
 

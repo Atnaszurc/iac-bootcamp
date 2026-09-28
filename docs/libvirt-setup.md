@@ -252,6 +252,23 @@ The default network typically uses:
 - **Gateway**: 192.168.122.1
 - **DHCP Range**: 192.168.122.2 - 192.168.122.254
 
+## Storage Configuration
+
+### Default Storage Pool
+
+Several examples use `pool = "default"`. Unlike the default network, libvirt does **not** always create a default storage pool: tools like virt-manager create it on first use, a fresh command-line install often doesn't have one. Without it, Terraform fails with `Error: Pool Not Found`.
+
+```bash
+# Check whether it exists
+virsh -c qemu:///system pool-list --all
+
+# Create it if the list is empty
+virsh -c qemu:///system pool-define-as default dir --target /var/lib/libvirt/images
+virsh -c qemu:///system pool-build default
+virsh -c qemu:///system pool-start default
+virsh -c qemu:///system pool-autostart default
+```
+
 ### Creating Custom Networks (Optional)
 
 ```bash
@@ -612,7 +629,7 @@ Once Libvirt is installed and verified:
 
 1. ✅ **Install Terraform**: Follow the [Terraform installation guide](https://developer.hashicorp.com/terraform/install)
 
-2. ✅ **Download base images**: See `docs/base-images.md` for Ubuntu cloud image setup
+2. ✅ **Download base images**: See `docs/base-image-preparation.md` for Ubuntu cloud image setup
 
 3. ✅ **Start the training**: Begin with Terraform 1, Block 1 - Fundamentals
 
@@ -664,4 +681,4 @@ virsh domifaddr <vm-name>  # Get IP address
 
 ---
 
-**Ready to start?** Proceed to the next section: [Base Image Preparation](base-images.md)
+**Ready to start?** Proceed to the next section: [Base Image Preparation](base-image-preparation.md)

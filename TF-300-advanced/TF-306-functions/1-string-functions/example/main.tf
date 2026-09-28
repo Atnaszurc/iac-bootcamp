@@ -61,15 +61,15 @@ locals {
   network    = local.cidr_parts[0]
   prefix_len = local.cidr_parts[1]
 
-  packages     = ["nginx", "curl", "wget", "git"]
-  install_cmd  = "apt-get install -y ${join(" ", local.packages)}"
-  package_csv  = join(", ", local.packages)
+  packages    = ["nginx", "curl", "wget", "git"]
+  install_cmd = "apt-get install -y ${join(" ", local.packages)}"
+  package_csv = join(", ", local.packages)
 
   # ── trim functions ────────────────────────────────────────────────────────
-  env_raw    = "  production  "
-  env_clean  = trim(local.env_raw, " ")
-  no_prefix  = trimprefix("env-production", "env-")
-  no_suffix  = trimsuffix("server.example.com.", ".")
+  env_raw   = "  production  "
+  env_clean = trim(local.env_raw, " ")
+  no_prefix = trimprefix("env-production", "env-")
+  no_suffix = trimsuffix("server.example.com.", ".")
 
   # ── case conversion ───────────────────────────────────────────────────────
   upper_env = upper(var.environment)

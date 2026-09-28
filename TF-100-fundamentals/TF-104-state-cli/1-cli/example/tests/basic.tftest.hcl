@@ -45,7 +45,7 @@ run "creates_files_with_custom_environment" {
   variables {
     environment = "staging"
     file_contents = {
-      "config.txt" = "staging configuration"
+      "config.txt"  = "staging configuration"
       "secrets.txt" = "staging secrets placeholder"
     }
   }

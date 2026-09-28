@@ -14,9 +14,25 @@ terraform {
 resource "libvirt_network" "this" {
   name      = "${var.vm_name}-net"
   autostart = true
-  
-  # Note: In 0.9.3, mode and addresses are not supported
-  # Networks are automatically NAT-enabled with DHCP
+
+  forward = {
+    mode = "nat"
+  }
+
+  ips = [
+    {
+      address = cidrhost(var.network_cidr, 1)
+      prefix  = tonumber(split("/", var.network_cidr)[1])
+      dhcp = {
+        ranges = [
+          {
+            start = cidrhost(var.network_cidr, 100)
+            end   = cidrhost(var.network_cidr, 200)
+          }
+        ]
+      }
+    }
+  ]
 }
 
 resource "libvirt_pool" "this" {
@@ -47,7 +63,12 @@ resource "libvirt_volume" "disk" {
   pool     = libvirt_pool.this.name
   capacity = var.disk_size_bytes
   backing_store = {
-    path = libvirt_volume.base.id
+    path = libvirt_volume.base.path
+    format = {
+      type = "qcow2"
+    }
+  }
+  target = {
     format = {
       type = "qcow2"
     }
@@ -67,7 +88,7 @@ resource "libvirt_cloudinit_disk" "init" {
         ssh_authorized_keys:
           - ${var.ssh_public_key}
   EOT
-  
+
   meta_data = yamlencode({
     instance-id    = var.vm_name
     local-hostname = var.vm_name
@@ -76,7 +97,7 @@ resource "libvirt_cloudinit_disk" "init" {
 
 # Upload cloud-init ISO to the pool as a volume
 resource "libvirt_volume" "cloudinit" {
-  name = "${var.vm_name}-init-vol"
+  name = "${var.vm_name}-init.iso"
   pool = libvirt_pool.this.name
   create = {
     content = {
@@ -86,51 +107,78 @@ resource "libvirt_volume" "cloudinit" {
 }
 
 resource "libvirt_domain" "this" {
-  name   = var.vm_name
-  memory = var.memory_mb
-  vcpu   = var.vcpu_count
-  type   = "kvm"
+  name        = var.vm_name
+  memory      = var.memory_mb
+  memory_unit = "MiB"
+  vcpu        = var.vcpu_count
+  type        = "kvm"
+  running     = true
+
+  os = {
+    type         = "hvm"
+    type_arch    = "x86_64"
+    type_machine = "q35"
+  }
 
   devices = {
-    disk = [
+    disks = [
       {
-        volume = {
-          volume = libvirt_volume.disk.id
+        source = {
+          volume = {
+            pool   = libvirt_volume.disk.pool
+            volume = libvirt_volume.disk.name
+          }
         }
         target = {
           dev = "vda"
           bus = "virtio"
         }
+        driver = {
+          type = "qcow2"
+        }
       },
       {
-        volume = {
-          volume = libvirt_volume.cloudinit.id
+        device = "cdrom"
+        source = {
+          volume = {
+            pool   = libvirt_volume.cloudinit.pool
+            volume = libvirt_volume.cloudinit.name
+          }
         }
         target = {
-          dev = "vdb"
-          bus = "virtio"
+          dev = "sda"
+          bus = "sata"
         }
       }
     ]
-    interface = [
+    interfaces = [
       {
-        network = {
-          network = libvirt_network.this.name
-        }
         model = {
           type = "virtio"
         }
-        wait_for_lease = true
+        source = {
+          network = {
+            network = libvirt_network.this.name
+          }
+        }
+        wait_for_ip = {
+          source = "lease"
+        }
       }
     ]
-    console = [
+    consoles = [
       {
-        type = "pty"
         target = {
-          port = 0
           type = "serial"
+          port = 0
         }
       }
     ]
   }
+}
+
+# Read the address DHCP handed out (wait_for_ip above guarantees there is one)
+data "libvirt_domain_interface_addresses" "this" {
+  domain = libvirt_domain.this.name
+  source = "lease"
 }

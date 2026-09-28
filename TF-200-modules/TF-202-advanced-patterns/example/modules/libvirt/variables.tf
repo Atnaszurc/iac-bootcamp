@@ -24,3 +24,9 @@ variable "vcpu_count" {
   type        = number
   default     = 1
 }
+
+variable "network_cidr" {
+  description = "CIDR block for the VM's NAT network"
+  type        = string
+  default     = "10.202.0.0/24"
+}

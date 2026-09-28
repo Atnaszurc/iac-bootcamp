@@ -5,7 +5,7 @@
 #
 # Teaching focus: cloud-init security hardening (ufw, fail2ban, SSH key auth)
 
-# mock_provider bypasses the real libvirt schema so tests run without a daemon
+# mock_provider fakes provider responses so tests run without a daemon
 mock_provider "libvirt" {}
 
 run "plan_secure_network_defaults" {
@@ -19,6 +19,16 @@ run "plan_secure_network_defaults" {
   assert {
     condition     = libvirt_network.secure.autostart == true
     error_message = "Secure network should have autostart enabled"
+  }
+
+  assert {
+    condition     = libvirt_network.secure.ips[0].dhcp.ranges[0].start == "10.30.0.100" && libvirt_network.secure.ips[0].dhcp.ranges[0].end == "10.30.0.109"
+    error_message = "DHCP range should be limited to 10 addresses (.100-.109)"
+  }
+
+  assert {
+    condition     = libvirt_network.secure.ips[0].dhcp.hosts[0].ip == "10.30.0.10"
+    error_message = "The hardened VM should have a static DHCP lease at .10"
   }
 }
 

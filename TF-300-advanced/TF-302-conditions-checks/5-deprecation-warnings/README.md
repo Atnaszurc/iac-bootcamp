@@ -1,4 +1,4 @@
-# Section 5: Enhanced Deprecation Detection
+# Section 5: Deprecation Warnings
 
 **Terraform Version**: 1.15+  
 **Duration**: 20 minutes  
@@ -8,32 +8,26 @@
 
 ## 📋 Overview
 
-Starting with **Terraform 1.15**, deprecation detection has been significantly enhanced to help you identify and migrate away from deprecated resource attributes, blocks, and arguments before they are removed in future provider versions.
+Providers deprecate things all the time: an argument gets a better name, a resource is replaced by a new one, a data source becomes unnecessary. A deprecated feature keeps working for a while, and Terraform warns you about it on every plan. Then, in some future major version, it's gone and your configuration breaks.
 
-### What's New in Terraform 1.15
+Terraform 1.15 made these warnings more useful:
 
-1. **Improved Detection**: Better identification of deprecated resource attributes and blocks
-2. **Provider Messages**: Deprecation messages set by providers are now included in warnings
-3. **Clearer Warnings**: More informative deprecation warnings with migration guidance
+1. **Provider messages**: the provider's own explanation of what to use instead is shown in the warning
+2. **Follow the value**: when a deprecated value flows into something else (an output, another resource), Terraform warns *there* too, and says where the deprecation originates
+3. **Clearer warnings** with the exact file and line
 
-These enhancements help you:
-- Proactively identify deprecated features in your infrastructure
-- Understand why features are deprecated
-- Get guidance on migration paths
-- Avoid breaking changes in future provider updates
+This section uses real deprecations in the `random` and `null` providers, so you can see real warnings and do a real migration without any cloud account.
 
 ---
 
 ## 🎯 Learning Objectives
 
-By the end of this section, you will:
+By the end of this section, you will be able to:
 
-- ✅ Understand how Terraform detects deprecated features
-- ✅ Interpret deprecation warnings in plan and apply output
-- ✅ Identify deprecated attributes, blocks, and arguments
-- ✅ Use provider deprecation messages to guide migrations
-- ✅ Apply best practices for handling deprecations
-- ✅ Plan migration strategies for deprecated features
+- ✅ Read a deprecation warning and find the replacement
+- ✅ Follow a "Deprecated value used" warning back to its origin
+- ✅ Migrate deprecated arguments and data sources without changing infrastructure
+- ✅ Detect deprecation warnings reliably in CI
 
 ---
 
@@ -41,362 +35,156 @@ By the end of this section, you will:
 
 ### What is Deprecation?
 
-**Deprecation** is a software development practice where features are marked for future removal. It provides a transition period where:
-1. The feature still works (backward compatibility)
-2. Users receive warnings about the upcoming removal
-3. Alternative approaches are documented
-4. Users have time to migrate their code
-
-### Why Do Providers Deprecate Features?
-
-Providers deprecate features for several reasons:
-- **Better alternatives exist**: New, improved ways to accomplish the same goal
-- **Security concerns**: The feature has security implications
-- **API changes**: The underlying cloud provider API has changed
-- **Simplification**: Reducing complexity by removing redundant features
-- **Performance**: More efficient alternatives are available
+Deprecation marks a feature as "still works, but will be removed". It's a transition period: the old and new ways exist side by side, so you can migrate at your own pace.
 
 ### Deprecation Lifecycle
 
 ```
-1. Feature is Active
-   └─> No warnings, fully supported
-
-2. Feature is Deprecated (Current State)
-   └─> Warnings issued, still functional
-   └─> Migration guidance provided
-   └─> Alternative documented
-
-3. Feature is Removed (Future Version)
-   └─> No longer available
-   └─> Configuration errors if used
-   └─> Must use alternative
+v3.4: numeric added, number deprecated  →  warnings on every plan
+v3.x: both work                         →  your window to migrate
+v4.0: number removed                    →  configuration breaks
 ```
 
----
+The window can be long, but it ends. A plan that's full of deprecation warnings is a plan with a deadline you can't see.
 
-## 🔍 How Terraform Detects Deprecations
+### Where Do Warnings Come From?
 
-### 1. Schema-Based Detection
-
-Providers define their resource schemas with deprecation metadata:
-
-```go
-// Provider code (Go)
-"instance_type": {
-    Type:       schema.TypeString,
-    Optional:   true,
-    Deprecated: "Use 'instance_class' instead. 'instance_type' will be removed in v5.0.0",
-}
-```
-
-When Terraform processes your configuration, it checks the schema and issues warnings for deprecated attributes.
-
-### 2. Enhanced Detection in Terraform 1.15
-
-**Before Terraform 1.15**:
-- Basic deprecation detection
-- Generic warning messages
-- Limited context about why features are deprecated
-
-**After Terraform 1.15**:
-- Improved detection of deprecated attributes and blocks
-- Provider-specific deprecation messages included in warnings
-- Better context and migration guidance
-- More comprehensive coverage of deprecated features
-
----
-
-## ⚠️ Understanding Deprecation Warnings
-
-### Warning Format
-
-Deprecation warnings typically follow this format:
-
-```
-Warning: Argument is deprecated
-
-  on main.tf line 15, in resource "example_resource" "demo":
-  15:   deprecated_attribute = "value"
-
-The attribute "deprecated_attribute" is deprecated. Use "new_attribute" instead.
-This attribute will be removed in version 5.0.0 of the provider.
-```
-
-### Warning Components
-
-1. **Warning Type**: "Argument is deprecated" or "Block is deprecated"
-2. **Location**: File name and line number
-3. **Resource Context**: Which resource contains the deprecated feature
-4. **Deprecation Message**: Provider-specific guidance (new in 1.15)
-5. **Timeline**: When the feature will be removed (if specified)
-
----
-
-## 📝 Common Deprecation Scenarios
-
-### Scenario 1: Deprecated Attribute
-
-An attribute is being replaced by a better alternative:
-
-```hcl
-# Deprecated approach
-resource "aws_instance" "example" {
-  ami           = "ami-12345678"
-  instance_type = "t2.micro"
-  
-  # ⚠️ DEPRECATED: ebs_block_device is deprecated
-  ebs_block_device {
-    device_name = "/dev/sda1"
-    volume_size = 20
-  }
-}
-
-# Modern approach
-resource "aws_instance" "example" {
-  ami           = "ami-12345678"
-  instance_type = "t2.micro"
-  
-  # ✅ Use root_block_device instead
-  root_block_device {
-    volume_size = 20
-  }
-}
-```
-
-**Warning Message**:
-```
-Warning: Argument is deprecated
-
-  on main.tf line 7, in resource "aws_instance" "example":
-   7:   ebs_block_device {
-
-The "ebs_block_device" block is deprecated. Use "root_block_device" or 
-"ebs_block_device" in aws_ebs_volume resource instead. This block will be 
-removed in version 6.0.0 of the AWS provider.
-```
-
-### Scenario 2: Deprecated Block
-
-An entire block type is being phased out:
-
-```hcl
-# Deprecated approach
-resource "azurerm_virtual_machine" "example" {
-  name                  = "example-vm"
-  location              = "East US"
-  resource_group_name   = "example-rg"
-  
-  # ⚠️ DEPRECATED: This resource is deprecated
-  # Use azurerm_linux_virtual_machine or azurerm_windows_virtual_machine
-}
-
-# Modern approach
-resource "azurerm_linux_virtual_machine" "example" {
-  name                = "example-vm"
-  location            = "East US"
-  resource_group_name = "example-rg"
-  
-  # ✅ New resource type with better structure
-}
-```
-
-### Scenario 3: Deprecated Argument Value
-
-Specific values for an argument are deprecated:
-
-```hcl
-# Deprecated approach
-resource "google_compute_instance" "example" {
-  name         = "example-instance"
-  machine_type = "n1-standard-1"  # ⚠️ n1 series is deprecated
-  zone         = "us-central1-a"
-}
-
-# Modern approach
-resource "google_compute_instance" "example" {
-  name         = "example-instance"
-  machine_type = "e2-standard-2"  # ✅ Use e2 series instead
-  zone         = "us-central1-a"
-}
-```
-
----
-
-## 🛠️ Handling Deprecation Warnings
-
-### Step 1: Identify All Deprecations
-
-Run `terraform plan` to see all deprecation warnings:
+Providers mark attributes, blocks and whole resources as deprecated in their schema, with a message. You can see them yourself:
 
 ```bash
+terraform providers schema -json | jq '.provider_schemas[].resource_schemas.random_string.block.attributes.number'
+# { "deprecated": true, "description": "... **NOTE**: This is deprecated, use `numeric` instead.", ... }
+```
+
+Your own modules can deprecate variables and outputs too, with the `deprecated` argument (Terraform 1.15+): see [TF-102 Section 6](../../../TF-100-fundamentals/TF-102-variables-loops/6-deprecated-attribute/README.md).
+
+---
+
+## ⚠️ Reading the Warnings
+
+The [`example/`](./example/) configuration works, but uses two deprecated things:
+
+```hcl
+resource "random_string" "suffix" {
+  length  = 8
+  special = false
+  upper   = false
+  number  = false # deprecated
+}
+
+data "null_data_source" "names" { # deprecated
+  inputs = {
+    web = "web-${random_string.suffix.result}"
+    db  = "db-${random_string.suffix.result}"
+  }
+}
+
+output "vm_names" {
+  value = data.null_data_source.names.outputs
+}
+```
+
+```bash
+cd example
+terraform init
+terraform apply
+```
+
+### 1. A deprecated argument
+
+```
+Warning: Attribute Deprecated
+
+  with random_string.suffix,
+  on main.tf line 32, in resource "random_string" "suffix":
+  32:   number  = false # deprecated
+
+**NOTE**: This is deprecated, use `numeric` instead.
+```
+
+The last line is the provider's own message: it tells you the replacement.
+
+### 2. A deprecated data source
+
+```
+Warning: Deprecated
+
+  with data.null_data_source.names,
+  on main.tf line 36, in data "null_data_source" "names":
+
+The null_data_source was historically used to construct intermediate values
+to re-use elsewhere in configuration, the same can now be achieved using
+locals or the terraform_data resource type in Terraform 1.4 and later.
+```
+
+### 3. A deprecated value, used elsewhere
+
+```
+Warning: Deprecated value used
+
+  on main.tf line 44, in output "vm_names":
+  44:   value = data.null_data_source.names.outputs
+
+  The deprecation originates from data.null_data_source.names
+```
+
+Nothing is wrong with the output itself, but it depends on something deprecated. In a large configuration this tells you everything you'll have to touch when you migrate.
+
+### "(and 2 more similar warnings elsewhere)"
+
+Terraform folds repeated warnings together. To see every single one, use JSON output:
+
+```bash
+terraform plan -json | jq -r 'select(.type == "diagnostic" and .diagnostic.severity == "warning") | .diagnostic.summary'
+# Attribute Deprecated
+# Deprecated
+# Deprecated value used
+# Deprecated value used
+```
+
+---
+
+## 🛠️ Migrating
+
+### Step 1: Replace the argument
+
+```hcl
+resource "random_string" "suffix" {
+  length  = 8
+  special = false
+  upper   = false
+  numeric = false # was: number
+}
+```
+
+### Step 2: Replace the data source with locals
+
+```hcl
+locals {
+  vm_names = {
+    web = "web-${random_string.suffix.result}"
+    db  = "db-${random_string.suffix.result}"
+  }
+}
+
+output "vm_names" {
+  value = local.vm_names
+}
+```
+
+Remove the `null` provider from `required_providers` too: nothing uses it any more.
+
+### Step 3: Verify
+
+```bash
+terraform init
 terraform plan
+# No changes. Your infrastructure matches the configuration.
 ```
 
-Look for warnings in the output:
-```
-Warning: Argument is deprecated
-Warning: Block is deprecated
-Warning: Resource is deprecated
-```
+No warnings, and **no changes**. That's what a good migration looks like: same infrastructure, same values (compare `terraform output` before and after), newer code. If the plan wants to *replace* something, stop and read the provider's upgrade guide before applying.
 
-### Step 2: Read the Deprecation Message
-
-Each warning includes:
-- What is deprecated
-- Why it's deprecated (if provided)
-- What to use instead
-- When it will be removed
-
-**Example**:
-```
-Warning: Argument is deprecated
-
-  on main.tf line 10, in resource "aws_db_instance" "example":
-  10:   engine_version = "5.7"
-
-The "engine_version" format "5.7" is deprecated. Use "5.7.44" (full version) 
-instead. Support for major.minor format will be removed in version 6.0.0.
-```
-
-### Step 3: Plan Your Migration
-
-Consider:
-1. **Urgency**: When will the feature be removed?
-2. **Impact**: How many resources are affected?
-3. **Complexity**: How difficult is the migration?
-4. **Testing**: What testing is needed?
-
-### Step 4: Implement the Migration
-
-1. **Update one resource at a time** (for safety)
-2. **Test in a non-production environment first**
-3. **Review the plan carefully** before applying
-4. **Document the changes** for your team
-
-### Step 5: Verify the Migration
-
-After updating:
-```bash
-terraform plan
-```
-
-Confirm:
-- ✅ No more deprecation warnings for migrated resources
-- ✅ No unexpected changes in the plan
-- ✅ Resources function as expected
-
----
-
-## 📊 Example: Complete Migration Workflow
-
-### Initial Configuration (with deprecations)
-
-```hcl
-# main.tf
-terraform {
-  required_version = ">= 1.15.0"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
-
-resource "aws_security_group" "example" {
-  name        = "example-sg"
-  description = "Example security group"
-  
-  # ⚠️ DEPRECATED: Use aws_security_group_rule resources instead
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-}
-```
-
-### Running terraform plan
-
-```bash
-$ terraform plan
-
-Warning: Argument is deprecated
-
-  on main.tf line 15, in resource "aws_security_group" "example":
-  15:   ingress {
-
-Inline ingress and egress rules are deprecated. Use separate 
-aws_security_group_rule resources instead. Inline rules will be removed 
-in version 6.0.0 of the AWS provider.
-
-Warning: Argument is deprecated
-
-  on main.tf line 22, in resource "aws_security_group" "example":
-  22:   egress {
-
-Inline ingress and egress rules are deprecated. Use separate 
-aws_security_group_rule resources instead. Inline rules will be removed 
-in version 6.0.0 of the AWS provider.
-```
-
-### Migrated Configuration
-
-```hcl
-# main.tf
-terraform {
-  required_version = ">= 1.15.0"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
-
-# ✅ Security group without inline rules
-resource "aws_security_group" "example" {
-  name        = "example-sg"
-  description = "Example security group"
-}
-
-# ✅ Separate ingress rule
-resource "aws_security_group_rule" "ingress" {
-  type              = "ingress"
-  from_port         = 80
-  to_port           = 80
-  protocol          = "tcp"
-  cidr_blocks       = ["0.0.0.0/0"]
-  security_group_id = aws_security_group.example.id
-}
-
-# ✅ Separate egress rule
-resource "aws_security_group_rule" "egress" {
-  type              = "egress"
-  from_port         = 0
-  to_port           = 0
-  protocol          = "-1"
-  cidr_blocks       = ["0.0.0.0/0"]
-  security_group_id = aws_security_group.example.id
-}
-```
-
-### Verification
-
-```bash
-$ terraform plan
-
-No warnings! Configuration is up to date.
-```
+The finished version is in [`example/solution/`](./example/solution/). The tests (`terraform test`) run both versions and check they produce the same VM names.
 
 ---
 
@@ -404,76 +192,35 @@ No warnings! Configuration is up to date.
 
 ### 1. Address Deprecations Promptly
 
-**Don't wait until features are removed**:
-- ❌ Ignoring warnings leads to breaking changes
+- ❌ Ignoring warnings leads to breaking changes at the worst moment: when you need to upgrade for another reason
 - ✅ Migrate during the deprecation period
-- ✅ Schedule regular deprecation reviews
+- ✅ Treat a new deprecation warning like a failing test: fix it in the same change that introduced it
 
-### 2. Test Migrations Thoroughly
+### 2. Use Version Constraints
 
-**Always test in non-production first**:
-```bash
-# Development environment
-cd environments/dev
-terraform plan
-terraform apply
+Pin providers so a major version (the one that *removes* deprecated features) never arrives unannounced:
 
-# Staging environment
-cd ../staging
-terraform plan
-terraform apply
-
-# Production environment (after successful testing)
-cd ../prod
-terraform plan
-terraform apply
-```
-
-### 3. Use Version Constraints
-
-**Pin provider versions to avoid surprises**:
 ```hcl
 terraform {
   required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"  # Allow patch updates, not major
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.7" # any 3.x from 3.7, never 4.0
     }
   }
 }
 ```
 
-### 4. Monitor Provider Changelogs
+Then upgrade major versions deliberately, with a clean plan (no deprecation warnings) as the starting point.
 
-**Stay informed about deprecations**:
-- Subscribe to provider release notes
-- Review changelogs before upgrading
-- Plan migrations in advance
-- Communicate changes to your team
+### 3. Read the Upgrade Guides
 
-### 5. Document Your Migrations
+Before a major provider upgrade, read the provider's changelog and upgrade guide. Deprecations you've already migrated won't break; the guide tells you what else changes.
 
-**Keep a migration log**:
-```markdown
-# Deprecation Migration Log
+### 4. Automate Detection
 
-## 2026-05-07: AWS Provider 5.x Deprecations
+Fail CI when a plan has deprecation warnings. Use JSON output: the human-readable output folds warnings together, and the headings vary ("Attribute Deprecated", "Deprecated", "Deprecated value used"), which makes `grep` fragile.
 
-### Migrated
-- ✅ aws_security_group inline rules → aws_security_group_rule
-- ✅ aws_instance ebs_block_device → root_block_device
-
-### Pending
-- ⏳ aws_db_instance engine_version format (due: v6.0.0)
-- ⏳ aws_lb access_logs.enabled → access_logs block
-
-### Blocked
-- ⛔ aws_elasticache_cluster (waiting for module update)
-```
-
-### 6. Automate Detection
-
-**Use CI/CD to catch deprecations early**:
 ```yaml
 # .github/workflows/terraform.yml
 name: Terraform Validation
@@ -484,24 +231,23 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.15.0
-      
-      - name: Terraform Init
-        run: terraform init
-      
-      - name: Terraform Plan
-        run: terraform plan -no-color 2>&1 | tee plan.txt
-      
-      - name: Check for Deprecation Warnings
+          terraform_version: 1.16.4
+          terraform_wrapper: false # raw JSON output for jq
+
+      - run: terraform init
+
+      - name: Fail on deprecation warnings
         run: |
-          if grep -q "Warning.*deprecated" plan.txt; then
-            echo "⚠️ Deprecation warnings found!"
-            grep "Warning.*deprecated" plan.txt
+          terraform plan -json > plan.jsonl
+          jq -r 'select(.type == "diagnostic" and .diagnostic.severity == "warning")
+                 | select(.diagnostic.summary | test("deprecat"; "i"))
+                 | "\(.diagnostic.summary): \(.diagnostic.range.filename // "?"):\(.diagnostic.range.start.line // "?")"' plan.jsonl > deprecations.txt
+          if [ -s deprecations.txt ]; then
+            cat deprecations.txt
             exit 1
           fi
 ```
@@ -510,112 +256,60 @@ jobs:
 
 ## 🔧 Practical Exercises
 
-### Exercise 1: Identify Deprecations
+### Exercise 1: Read the Warnings
 
-1. Review the example configuration in `example/main.tf`
-2. Run `terraform plan`
-3. List all deprecation warnings
-4. Categorize them by urgency
+1. Run `terraform apply` in `example/`
+2. For each warning, write down: what is deprecated, and what the provider says to use instead
+3. Run the `jq` command from [above](#and-2-more-similar-warnings-elsewhere) and compare the count with what the normal output shows
 
-### Exercise 2: Migrate a Deprecated Attribute
+### Exercise 2: Migrate Without Changes
 
-1. Choose one deprecated attribute from Exercise 1
-2. Research the recommended alternative
-3. Update the configuration
-4. Verify the migration with `terraform plan`
+1. Note the output of `terraform output vm_names`
+2. Migrate `main.tf` (without looking at `solution/`)
+3. `terraform plan` must show no warnings and no changes, and `terraform output vm_names` must be unchanged
 
-### Exercise 3: Create a Migration Plan
+### Exercise 3: Find Deprecations Before They Warn
 
-1. Document all deprecations in your configuration
-2. Prioritize by removal timeline
-3. Estimate effort for each migration
-4. Create a migration schedule
+Deprecated things you don't use yet don't warn. List everything deprecated in the providers you use:
+
+```bash
+terraform providers schema -json | jq -r '
+  .provider_schemas | to_entries[] | .key as $p
+  | (.value.resource_schemas // {}) + (.value.data_source_schemas // {}) | to_entries[] | .key as $r
+  | (if .value.block.deprecated then "\($p) \($r) (whole resource)" else empty end),
+    (.value.block.attributes // {} | to_entries[] | select(.value.deprecated) | "\($p) \($r).\(.key)")'
+```
 
 ---
 
 ## 📖 Additional Resources
 
-### Official Documentation
-- [Terraform 1.15 Release Notes](https://github.com/hashicorp/terraform/releases/tag/v1.15.0)
 - [Provider Deprecation Guidelines](https://developer.hashicorp.com/terraform/plugin/best-practices/deprecations)
 - [Terraform Upgrade Guides](https://developer.hashicorp.com/terraform/language/upgrade-guides)
-
-### Provider-Specific Resources
-- [AWS Provider Changelog](https://github.com/hashicorp/terraform-provider-aws/blob/main/CHANGELOG.md)
-- [Azure Provider Changelog](https://github.com/hashicorp/terraform-provider-azurerm/blob/main/CHANGELOG.md)
-- [Google Provider Changelog](https://github.com/hashicorp/terraform-provider-google/blob/main/CHANGELOG.md)
-
-### Community Resources
-- [Terraform Registry](https://registry.terraform.io/) - Provider documentation
-- [HashiCorp Discuss](https://discuss.hashicorp.com/c/terraform-core) - Community forum
-- [Terraform GitHub Issues](https://github.com/hashicorp/terraform/issues) - Bug reports and feature requests
+- [random provider changelog](https://github.com/hashicorp/terraform-provider-random/blob/main/CHANGELOG.md)
+- [`terraform_data` resource](https://developer.hashicorp.com/terraform/language/resources/terraform-data) — the replacement for `null_resource` and `null_data_source`
 
 ---
 
 ## 🎓 Key Takeaways
 
-1. **Deprecation warnings are helpful**, not annoying - they prevent future breaking changes
-2. **Provider messages** (new in 1.15) provide valuable migration guidance
-3. **Address deprecations promptly** during the transition period
-4. **Test migrations thoroughly** in non-production environments first
-5. **Document your migrations** for team knowledge sharing
-6. **Automate detection** in CI/CD pipelines to catch issues early
-7. **Stay informed** about provider changes and deprecations
+1. **Deprecation warnings are deadlines**, not noise
+2. **Provider messages** (1.15+) tell you the replacement; "Deprecated value used" tells you everywhere it matters
+3. **A good migration changes code, not infrastructure**: aim for "No changes"
+4. **Detect warnings with `-json`** in CI, not with `grep`
 
 ---
 
 ## ✅ Section Checklist
 
-Before moving to the next section, ensure you can:
-
 - [ ] Identify deprecation warnings in `terraform plan` output
-- [ ] Understand the components of a deprecation warning
-- [ ] Read and interpret provider deprecation messages
-- [ ] Plan a migration strategy for deprecated features
-- [ ] Implement a migration safely
-- [ ] Verify that deprecations have been resolved
-- [ ] Document migrations for your team
+- [ ] Follow a "Deprecated value used" warning to its origin
+- [ ] Migrate a deprecated argument and a deprecated data source
+- [ ] Verify a migration with a clean plan and unchanged outputs
+- [ ] Detect deprecation warnings in CI
 
 ---
 
 ## 🔜 Next Steps
 
-After completing this section:
-
-1. **Review your existing configurations** for deprecation warnings
-2. **Create a migration plan** for any deprecations found
-3. **Set up automated detection** in your CI/CD pipeline
-4. **Continue to TF-303** for test framework enhancements
-
----
-
-**Remember**: Deprecation warnings are your friends! They help you maintain healthy, future-proof infrastructure code. Address them proactively to avoid breaking changes.
-
-## Testing Considerations
-
-### Using command = apply in Tests
-
-This module's tests use `command = apply` instead of `command = plan` because the infrastructure resources create values that are unknown until after the apply phase.
-
-**Why apply is required**:
-- Resource IDs are generated during creation
-- Computed attributes are only known after apply
-- Output values depend on created resources
-
-**When to use plan vs apply**:
-- **Use `command = plan`**: When testing static values, data sources, or validation logic
-- **Use `command = apply`**: When testing resource creation, outputs, or computed values
-
-`hcl
-# Example test structure
-run "test_infrastructure" {
-  command = apply  # Required for resource testing
-  
-  assert {
-    condition     = output.resource_id != ""
-    error_message = "Resource ID should be generated"
-  }
-}
-`
-
-**Note**: Using `command = apply` means tests will create actual infrastructure, so ensure proper cleanup in test teardown.
+Continue to **TF-303** for the Terraform test framework.

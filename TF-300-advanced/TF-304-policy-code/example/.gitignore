@@ -1,0 +1,9 @@
+.terraform/
+.terraform.lock.hcl
+tfplan
+*.tfstate
+*.tfstate.*
+
+# The repo ignores *.tfvars; these two are lesson material, with no secrets
+!violations.tfvars
+!compliant.tfvars

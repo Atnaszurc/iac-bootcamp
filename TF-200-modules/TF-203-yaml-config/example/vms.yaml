@@ -29,5 +29,3 @@ virtual_machines:
     packages:
       - redis
       - curl
-
-# Made with Bob

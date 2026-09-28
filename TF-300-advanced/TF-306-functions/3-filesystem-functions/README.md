@@ -31,14 +31,11 @@ By the end of this section, you will be able to:
 Reads the contents of a file and returns it as a string:
 
 ```hcl
-# Read a shell script
-resource "libvirt_domain" "vm" {
-  cloudinit = libvirt_cloudinit_disk.init.id
-}
-
+# Read a cloud-init file into the cloud-init disk
 resource "libvirt_cloudinit_disk" "init" {
   name      = "init.iso"
   user_data = file("${path.module}/cloud-init/user-data.yaml")
+  meta_data = file("${path.module}/cloud-init/meta-data.yaml")
 }
 ```
 

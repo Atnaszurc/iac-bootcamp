@@ -47,23 +47,27 @@ Layer 3: Application (application/)
 
 ## 📚 `terraform_remote_state` Data Source
 
+Both configurations below store their state in the S3 backend from [Section 2](../2-remote-backends/README.md#-hands-on-a-real-s3-backend-without-a-cloud-account) (the local Moto setup). Initialise each with `terraform init -backend-config=moto.s3.tfbackend`, using the file from Section 2's example.
+
 ### Producer Configuration (networking/)
 
 ```hcl
 # networking/main.tf
 terraform {
-  backend "azurerm" {
-    resource_group_name  = "tfstate-rg"
-    storage_account_name = "tfstateaccount"
-    container_name       = "tfstate"
-    key                  = "networking.terraform.tfstate"
+  backend "s3" {
+    key          = "networking/terraform.tfstate"
+    use_lockfile = true
   }
 }
 
 resource "libvirt_network" "main" {
-  name      = "main-network"
-  mode      = "nat"
-  addresses = ["10.0.0.0/24"]
+  name    = "main-network"
+  forward = { mode = "nat" }
+  ips = [{
+    address = "10.0.0.1"
+    prefix  = 24
+    dhcp    = { ranges = [{ start = "10.0.0.100", end = "10.0.0.200" }] }
+  }]
 }
 ```
 
@@ -90,32 +94,51 @@ output "network_cidr" {
 ```hcl
 # compute/main.tf
 terraform {
-  backend "azurerm" {
-    resource_group_name  = "tfstate-rg"
-    storage_account_name = "tfstateaccount"
-    container_name       = "tfstate"
-    key                  = "compute.terraform.tfstate"
+  backend "s3" {
+    key          = "compute/terraform.tfstate"
+    use_lockfile = true
   }
 }
 
-# Read outputs from the networking configuration
+# Read outputs from the networking configuration.
+# terraform_remote_state doesn't read .tfbackend files, so the connection
+# settings are spelled out here (for real AWS: just bucket, key and region).
 data "terraform_remote_state" "networking" {
-  backend = "azurerm"
+  backend = "s3"
   config = {
-    resource_group_name  = "tfstate-rg"
-    storage_account_name = "tfstateaccount"
-    container_name       = "tfstate"
-    key                  = "networking.terraform.tfstate"
+    bucket = "tfstate"
+    key    = "networking/terraform.tfstate"
+    region = "us-east-1"
+
+    # Moto settings, same as moto.s3.tfbackend
+    access_key                  = "test"
+    secret_key                  = "test"
+    endpoints                   = { s3 = "http://localhost:5000" }
+    use_path_style              = true
+    skip_credentials_validation = true
+    skip_requesting_account_id  = true
+    skip_metadata_api_check     = true
   }
 }
 
-# Use the network ID from the networking configuration
+# Use the network from the networking configuration.
+# libvirt interfaces reference networks by NAME, so that's the output to share.
 resource "libvirt_domain" "app" {
-  name   = "app-server"
-  memory = 1024
+  name        = "app-server"
+  memory      = 1024
+  memory_unit = "MiB"
+  type        = "kvm"
+  os          = { type = "hvm" }
 
-  network_interface {
-    network_id = data.terraform_remote_state.networking.outputs.network_id
+  devices = {
+    interfaces = [
+      {
+        model = { type = "virtio" }
+        source = {
+          network = { network = data.terraform_remote_state.networking.outputs.network_name }
+        }
+      }
+    ]
   }
 }
 ```

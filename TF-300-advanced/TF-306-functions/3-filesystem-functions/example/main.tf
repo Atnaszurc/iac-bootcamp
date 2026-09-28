@@ -82,8 +82,8 @@ locals {
       environment   = "staging"
       features_list = join("\n", [for feature in ["authentication", "logging"] : "${feature} = enabled"])
       db_host       = "db-staging.internal"
-      db_port          = 5432
-      db_name          = "staging_appdb"
+      db_port       = 5432
+      db_name       = "staging_appdb"
     }
   )
 

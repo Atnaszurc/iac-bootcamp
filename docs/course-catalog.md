@@ -460,7 +460,7 @@ Implement comprehensive input validation. Learn how to validate variables, use a
 - Write variable validation rules
 - Implement cross-variable validation
 - Use advanced Terraform functions
-- Use provider-defined functions (Azure)
+- Use provider-defined functions (the `time` provider's `rfc3339_parse` and `duration_parse`)
 - Create custom validation logic
 - Provide helpful error messages
 
@@ -547,7 +547,7 @@ Implement runtime validation with preconditions, postconditions, and check block
 **Duration**: 1 hour  
 **Level**: Advanced  
 **Prerequisites**: TF-302  
-**Location**: `TF-300-advanced/TF-303-test-framework/` **[PLANNED]**
+**Location**: `TF-300-advanced/TF-303-test-framework/`
 
 **Description**:
 Write comprehensive tests for Terraform modules. Learn the Terraform Test Framework to ensure your modules work correctly across different scenarios and configurations.
@@ -586,13 +586,14 @@ Write comprehensive tests for Terraform modules. Learn the Terraform Test Framew
 ---
 
 #### TF-304: Policy as Code
-**Duration**: 1 hour  
+**Duration**: 1.5 hours  
 **Level**: Advanced  
 **Prerequisites**: TF-303  
-**Location**: `TF-300-advanced/TF-304-policy-code/` **[PLANNED]**
+**Location**: `TF-300-advanced/TF-304-policy-code/`  
+**Needs**: OPA 1.x; Terraform and libvirt only to make your own plans
 
 **Description**:
-Enforce organizational policies with code. Learn how to write and test policies using OPA/Rego or Sentinel to ensure compliance and security across all infrastructure.
+Enforce organizational policies with code. Write and test OPA/Rego policies (OPA 1.x syntax) against a real Terraform plan of libvirt infrastructure, lint them with Regal, and gate CI on them. Compares OPA, Sentinel and Terraform policy in HCP Terraform (Sentinel in depth: TF-404).
 
 **Learning Objectives**:
 - Write policy as code
@@ -743,7 +744,7 @@ A systematic deep dive into four essential function categories. Move beyond basi
 **Level**: Advanced
 **Prerequisites**: TF-104, TF-204
 **Location**: `TF-300-advanced/TF-307-query-actions/`
-**Terraform Version**: 1.14+
+**Terraform Version**: 1.14+ (1.16+ for destroy-time triggers, `on_failure` and `caller`)
 
 **Description**:
 Explore two powerful new paradigms introduced in Terraform 1.14: **list resources** for querying existing infrastructure without managing it, and **actions** for provider-defined imperative operations. These features bridge the gap between declarative IaC and operational tasks.
@@ -760,23 +761,24 @@ Explore two powerful new paradigms introduced in Terraform 1.14: **list resource
 **Topics Covered**:
 1. **List Resources** (Part 1)
    - What are list resources? (read-only, never in state)
-   - `.tfquery.hcl` file format and `list` block syntax
-   - `terraform query` command
+   - `.tfquery.hcl` file format and `list` block syntax (`config {}`, `include_resource`, `limit`)
+   - `terraform query` command and `terraform validate -query`
    - `-generate-config-out` flag for import generation
    - Comparison: list resources vs data sources
 
-2. **Actions Block** (Part 2)
-   - What are Actions? (provider-defined imperative operations)
-   - `action` block syntax
-   - Trigger types: `after_create`, `after_update`, `after_apply`, `before_destroy`
+2. **Actions** (Part 2)
+   - What are Actions? (provider-defined operations outside CRUD)
+   - `action` block syntax with `config {}`
+   - `lifecycle { action_trigger { ... } }` — events `before/after_create`, `before/after_update`, and `before/after_destroy` (1.16+)
+   - `on_failure = halt | continue | taint` and the `caller` symbol (1.16+)
    - Manual invocation: `terraform apply -invoke=<action>`
-   - Actions vs `local-exec` vs `null_resource`
+   - Actions vs `local-exec` vs `terraform_data`
 
 **Hands-On Exercises**:
-- Write a `.tfquery.hcl` file to list existing resources
-- Run `terraform query` to discover infrastructure
-- Generate import configuration from query results
-- Write an action block triggered after resource creation
+- Write and validate a `.tfquery.hcl` file that discovers EC2 instances
+- Generate import configuration from query results (against Moto, a local AWS mock — no account needed)
+- Wire `local_command` actions to create/update/destroy events — no credentials needed
+- Reuse one action across `for_each` instances with `caller`
 - Manually invoke an action with `-invoke`
 
 **Key Takeaways**:
@@ -784,7 +786,7 @@ Explore two powerful new paradigms introduced in Terraform 1.14: **list resource
 - ✅ Can generate import configs from discovered resources
 - ✅ Understand provider-defined imperative operations
 - ✅ Know when to use Actions vs provisioners
-- ✅ Ready for Terraform 1.14 advanced features
+- ✅ Can handle action failures with `on_failure` (1.16+)
 
 > **⚠️ Provider Support Required**: Both list resources and actions require explicit provider support. Not all providers implement these features yet. Check provider documentation for availability.
 
@@ -803,7 +805,7 @@ The following topics were added to existing courses after the initial release:
 | TF-201 | `moved` blocks | `TF-201-module-design/moved-blocks/` | Rename/move resources without state CLI (1.1+) |
 | TF-203 | JSON-driven config | `TF-203-yaml-config/json-config/` | `jsondecode()` and `jsonencode()` patterns |
 | TF-204 | `removed` blocks | `TF-204-import-migration/removed-blocks/` | Stop managing resources without destroying (1.7+) |
-| TF-204 | Identity-based import | `TF-204-import-migration/3-identity-import/` | `identity` attribute in import blocks (1.12+) |
+| TF-204 | Identity-based import | `TF-204-import-migration/identity-import/` | `identity` attribute in import blocks (1.12+); AWS provider against Moto |
 | TF-301 | Sensitive values | `TF-301-validation/3-sensitive-values/` | `sensitive` attribute and `nonsensitive()` |
 | TF-301 | Ephemeral values | `TF-301-validation/4-ephemeral-values/` | `ephemeral` variables/outputs, `ephemeralasnull()` (1.10+) |
 | TF-301 | Cross-variable validation | `TF-301-validation/1-variable-conditions/` | Validation rules referencing other variables (1.9+) |
@@ -1328,13 +1330,13 @@ Learn HashiCorp's Sentinel policy-as-code framework. Write policies that gate Te
 
 ---
 
-#### TF-405: Terraform Stacks (NEW — 1.13)
-**Duration**: 1 hour
+#### TF-405: Terraform Stacks (1.13+)
+**Duration**: 1.5 hours
 **Level**: Expert
 **Prerequisites**: TF-401, TF-402
 **Location**: `TF-400-hcp-enterprise/TF-405-stacks/`
-**Terraform Version**: 1.13+
-**Note**: Requires HCP Terraform — not available in local/OSS Terraform
+**Terraform Version**: 1.13+ (verified with 1.16.4 and 1.17.0-beta2)
+**Note**: Writing and validating a Stack works locally; deploying needs HCP Terraform. The example adds 2 resources under management.
 
 **Description**:
 Explore Terraform Stacks — a new architectural paradigm for orchestrating multiple Terraform configurations as a single deployable unit. Stacks solve the "many workspaces" problem by providing a first-class way to deploy the same configuration across multiple environments, regions, or accounts with coordinated lifecycle management.
@@ -1342,50 +1344,42 @@ Explore Terraform Stacks — a new architectural paradigm for orchestrating mult
 **Learning Objectives**:
 - Explain what Terraform Stacks are and when to use them
 - Understand the difference between Stacks, Workspaces, and separate configurations
-- Describe the `.tfstack.hcl` and `.tfdeploy.hcl` file formats
+- Write `.tfcomponent.hcl` and `.tfdeploy.hcl` files (the GA formats; `.tfstack.hcl` was the beta)
 - Understand Components (like modules) and Deployments (like workspaces)
-- Use the `terraform stacks` CLI command
-- Know the limitations and HCP Terraform requirements
+- Use the `terraform stacks` CLI to validate locally and deploy to HCP Terraform
+- Estimate what a Stack costs in resources under management
 
 **Topics Covered**:
 1. **What are Stacks?**
    - Problem: managing many similar workspaces
-   - Stacks as a unit of deployment
    - Components vs Deployments
-   - Stacks vs Workspaces vs separate configs
+   - Stacks vs Workspaces
 
-2. **Stack File Formats**
-   - `.tfstack.hcl` — component definitions and provider configuration
-   - `.tfdeploy.hcl` — deployment definitions (environments/regions)
-   - `component` block syntax
-   - `deployment` block syntax
+2. **Stack Files**
+   - `.tfcomponent.hcl` — `required_providers`, `provider`, `variable`, `component`, `output`
+   - `.tfdeploy.hcl` — `deployment`, `identity_token`, `deployment_group`
+   - `.terraform-version` and the provider lock file
+   - Providers in Stacks, including the built-in `terraform` provider for `terraform_data`
 
 3. **terraform stacks CLI**
-   - `terraform stacks init`
-   - `terraform stacks plan`
-   - `terraform stacks apply`
-   - Stack-specific state management
+   - Local: `init`, `providers-lock`, `validate`, `fmt`
+   - HCP Terraform: `create`, `configuration upload`, `deployment-run`
 
-4. **When to Use Stacks**
-   - Multi-region deployments
-   - Multi-account deployments
-   - Environment promotion (dev → staging → prod)
-   - Limitations and trade-offs
+4. **Cost and When to Use Stacks**
+   - Resources under management: every billable resource × every deployment
+   - Deployment groups and auto-approval (Premium)
+   - Multi-region and multi-environment deployments; limitations
 
-**Hands-On Exercises** (Conceptual — requires HCP Terraform):
-- Design a Stack for a multi-environment deployment
-- Write a `.tfstack.hcl` component definition
-- Write a `.tfdeploy.hcl` deployment configuration
-- Compare Stack approach vs workspace approach for the same scenario
+**Hands-On Exercises**:
+- Validate the example Stack and test its components locally; break it and read the errors
+- Deploy it to HCP Terraform (2 resources under management), change one deployment, clean up
+- Optional: build it out with an OIDC-authenticated S3 bucket and count the cost
 
 **Key Takeaways**:
 - ✅ Understand the Stacks paradigm and use cases
-- ✅ Know `.tfstack.hcl` and `.tfdeploy.hcl` file formats
-- ✅ Can design a Stack architecture for multi-environment deployments
-- ✅ Understand when Stacks are better than workspaces
-- ✅ Know the HCP Terraform requirements and limitations
-
-> **⚠️ HCP Terraform Required**: Terraform Stacks require HCP Terraform (free tier available). They cannot be used with local Terraform or self-managed backends. The `terraform stacks` command is only available when connected to HCP Terraform.
+- ✅ Can write, validate and deploy a Stack
+- ✅ Know what `terraform stacks validate` doesn't check (deployment input values)
+- ✅ Can estimate and limit a Stack's resources under management
 
 ---
 

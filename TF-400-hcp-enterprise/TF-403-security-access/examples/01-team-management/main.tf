@@ -47,11 +47,11 @@ resource "tfe_team" "platform" {
   organization = var.organization
 
   organization_access {
-    manage_workspaces = true
-    manage_policies   = false  # Only owners manage policies
+    manage_workspaces   = true
+    manage_policies     = false # Only owners manage policies
     manage_vcs_settings = true
-    read_workspaces   = true
-    read_projects     = true
+    read_workspaces     = true
+    read_projects       = true
   }
 }
 
@@ -115,7 +115,7 @@ resource "tfe_variable_set" "platform_config" {
   name         = "Platform Configuration"
   description  = "Shared non-sensitive configuration for all workspaces"
   organization = var.organization
-  global       = false  # Not applied globally — applied per workspace below
+  global       = false # Not applied globally — applied per workspace below
 }
 
 resource "tfe_variable" "region" {

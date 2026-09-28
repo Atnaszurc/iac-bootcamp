@@ -1,386 +1,229 @@
-# Pre and Postconditions in Terraform for Azure Resources
+# Pre and Postconditions in Terraform
 
 ## Introduction
 
-Terraform 1.2 introduced pre and postconditions, allowing for more robust validation of resources before and after their creation or modification. This lesson focuses on implementing these conditions for Azure resources.
+Terraform 1.2 introduced preconditions and postconditions in the `lifecycle` block of resources, data sources and outputs. Where [variable validation](../../TF-301-validation/1-variable-conditions/README.md) checks one input, conditions check *assumptions*: things that depend on several values, on the real environment, or on what a resource turned out like after it was created.
+
+This lesson guards a libvirt VM: a network that must not clash with other networks, a pool that needs free space, a disk that must be big enough for its image, a VM that must fit on the host and actually start, and an IP address that must land where you expect.
+
+**Example**: [`example/`](./example/) — all conditions below, verified on a real libvirt host, with 6 tests that run without libvirt (`terraform test`).
 
 ## Table of Contents
 - [Preconditions](#preconditions)
 - [Postconditions](#postconditions)
-- [Combined Example: Azure App Service](#combined-example-azure-app-service)
+- [When Are Conditions Checked?](#when-are-conditions-checked)
 - [Best Practices](#best-practices)
-- [Tasks](#tasks)
-- [Task 1: Azure Storage Account](#task-1-azure-storage-account)
-- [Task 2: Azure Virtual Network](#task-2-azure-virtual-network)
-- [Task 3: Azure Key Vault](#task-3-azure-key-vault)
-- [Task 4: Azure SQL Database](#task-4-azure-sql-database)
-- [Task 5: Azure Container Registry](#task-5-azure-container-registry)
-- [Bonus Task: Azure Function App](#bonus-task-azure-function-app)
+- [Task 1: Network Overlap](#task-1-network-overlap)
+- [Task 2: Pool Free Space](#task-2-pool-free-space)
+- [Task 3: Disk vs Image Size](#task-3-disk-vs-image-size)
+- [Task 4: VM Fits the Host](#task-4-vm-fits-the-host)
+- [Task 5: The VM Actually Started](#task-5-the-vm-actually-started)
+- [Bonus Task: Postcondition on a Data Source](#bonus-task-postcondition-on-a-data-source)
+- [Testing Conditions](#testing-conditions)
 
 ## Preconditions
 
-Preconditions are checked before Terraform attempts to create, update, or destroy a resource. They ensure that certain conditions are met before any action is taken.
+A precondition is checked **before** Terraform creates, updates or destroys the resource. Use it for assumptions the resource depends on.
 
-### Example: Azure Storage Account
+### Example: Network Must Not Overlap
 
 ```hcl
-resource "azurerm_storage_account" "example" {
-    name = "examplestorage"
-    resource_group_name = azurerm_resource_group.example.name
-    location = azurerm_resource_group.example.location
-    account_tier = "Standard"
-    account_replication_type = var.replication_type
-    lifecycle {
-        precondition {
-            condition = var.environment != "prod" || var.replication_type == "GRS"
-            error_message = "Production storage accounts must use GRS replication."
-        }
+resource "libvirt_network" "main" {
+  name    = "${var.vm_name}-net"
+  forward = { mode = "nat" }
+  ips = [{
+    address = cidrhost(var.network_cidr, 1)
+    prefix  = tonumber(split("/", var.network_cidr)[1])
+  }]
+
+  lifecycle {
+    precondition {
+      condition     = length(local.overlapping_reserved) == 0
+      error_message = "network_cidr ${var.network_cidr} overlaps ${join(", ", local.overlapping_reserved)}. Pick another range."
     }
+  }
 }
 ```
 
-In this example, the precondition ensures that production environments use GRS replication for storage accounts.
+Without it, libvirt refuses to start an overlapping network, but only at apply time and with a far less helpful message. With it, `terraform plan` stops:
+
+```
+Error: Resource precondition failed
+  network_cidr 192.168.0.0/16 overlaps 192.168.122.0/24. Pick another range.
+```
+
+Why not a variable validation? Validation could do this too. A precondition fits better when the rule is about *this resource* (it's shown right next to it) or needs things a validation can't reach cleanly, such as resource attributes.
 
 ## Postconditions
 
-Postconditions are checked after Terraform has successfully created or updated a resource. They verify that the resource is in the expected state after the operation.
+A postcondition is checked **after** Terraform creates or updates the resource (or reads a data source). `self` refers to the resource's final values, including everything the provider computed.
 
-### Example: Azure Virtual Machine
+### Example: Pool Needs Free Space
+
 ```hcl
-resource "azurerm_linux_virtual_machine" "example" {
-    name = "example-vm"
-    resource_group_name = azurerm_resource_group.example.name
-    location = azurerm_resource_group.example.location
-    size = var.vm_size
-    admin_username = "adminuser"
-    network_interface_ids = [
-        azurerm_network_interface.example.id,
-    ]
-    admin_ssh_key {
-        username = "adminuser"
-        public_key = file("~/.ssh/id_rsa.pub")
+resource "libvirt_pool" "main" {
+  name   = "${var.vm_name}-pool"
+  type   = "dir"
+  target = { path = "/var/lib/libvirt/images/${var.vm_name}" }
+
+  lifecycle {
+    postcondition {
+      condition     = self.available >= var.min_free_gib * local.gib
+      error_message = "Pool ${self.name} has only ${floor(self.available / local.gib)} GiB free; need at least ${var.min_free_gib} GiB."
     }
-    os_disk {
-        caching = "ReadWrite"
-        storage_account_type = "Standard_LRS"
-    }
-    source_image_reference {
-        publisher = "Canonical"
-        offer     = "0001-com-ubuntu-server-jammy"
-        sku       = "22_04-lts"
-        version   = "latest"
-    }
-    lifecycle {
-        postcondition {
-            condition = self.os_disk[0].disk_size_gb >= 30
-            error_message = "OS disk size must be at least 30GB."
-        }
-    }
+  }
 }
 ```
 
-This postcondition verifies that the created VM has an OS disk of at least 30GB.
+`available` is computed by libvirt: nobody can know it before the pool exists.
 
-## Combined Example: Azure App Service
-```hcl
-resource "azurerm_app_service" "example" {
-    name = "example-app-service"
-    location = azurerm_resource_group.example.location
-    resource_group_name = azurerm_resource_group.example.name
-    app_service_plan_id = azurerm_app_service_plan.example.id
-    site_config {
-        dotnet_framework_version = var.dotnet_version
-        scm_type = "LocalGit"
-    }
-    lifecycle {
-        precondition {
-            condition = var.environment == "prod" ? var.sku_tier == "PremiumV2" : true
-            error_message = "Production environment must use PremiumV2 tier."
-        }
-        postcondition {
-            condition = self.https_only == true
-            error_message = "HTTPS-only must be enabled for the App Service."
-        }
-    }
-}
+```
+Error: Resource postcondition failed
+  Pool tf302-conditions-pool has only 938 GiB free; need at least 100000 GiB.
 ```
 
-This example combines both pre and postconditions:
-- The precondition ensures that production environments use the PremiumV2 tier.
-- The postcondition verifies that HTTPS-only is enabled after creation.
+A failed postcondition stops the apply, but the resource *has* been created. Terraform keeps it in state, and it's reported again on the next plan until you fix the cause.
+
+## When Are Conditions Checked?
+
+Terraform checks a condition as early as it can:
+- **Plan**, if every value in the condition is known. The network overlap and the host-memory check run at plan time.
+- **Apply**, if something is only known after a resource is created. The disk check (next) needs the size of an image that is downloaded during apply.
+
+```bash
+terraform apply -var disk_gib=1
+# ... downloads the base image, then:
+# Error: Resource precondition failed
+#   disk_gib (1) is smaller than the base image (3 GiB).
+```
 
 ## Best Practices
 
-1. Use preconditions for validations that can be checked before resource creation or modification.
-2. Use postconditions to verify the state of a resource after creation or update.
-3. Provide clear and informative error messages.
-4. Consider the impact on plan and apply operations when using these conditions.
+1. Use preconditions for assumptions a resource depends on; postconditions for guarantees about what it turned out like.
+2. Put facts into error messages: `${self.available}`, `${var.network_cidr}`. "Condition failed" helps nobody.
+3. Use data sources for real-world facts (host memory, existing ranges) instead of hard-coding them.
+4. Use a [`check` block](../2-check-blocks/README.md) instead when a failed assumption should *warn*, not block.
 
-## Tasks
+## Task 1: Network Overlap
 
-## Task 1: Azure Storage Account
+Add a precondition to the network: `network_cidr` must not overlap any range in `var.reserved_cidrs` (default: libvirt's own `192.168.122.0/24`).
 
-Implement pre and postconditions for an Azure Storage Account with the following requirements:
+Hint: two ranges overlap exactly when they have the same network address at the *shorter* of their two prefix lengths.
 
-1. Precondition: Ensure that the account name is between 3 and 24 characters and contains only lowercase letters and numbers.
-2. Postcondition: Verify that the created storage account has the "Access Tier" set to "Hot"
-
-Try changing the access_tier attribute to `Cool` instead of `Hot`
-
-### Example:
-This is an example on how to solve this task:
+### Example
 ```hcl
-resource "azurerm_storage_account" "example" {
-    name = var.storage_account_name
-    resource_group_name = data.azurerm_resource_group.example.name
-    location = data.azurerm_resource_group.example.location
-    account_tier = "Standard"
-    account_replication_type = "LRS"
-    access_tier = "Hot"
-    lifecycle {
-        precondition {
-        condition = can(regex("^[a-z0-9]{3,24}$", var.storage_account_name))
-            error_message = "Storage account name must be 3-24 characters long and contain only lowercase letters and numbers."
-        }
-        postcondition {
-            condition = self.access_tier == "Hot"
-            error_message = "The access tier for the storage account must be set to 'Hot'."
-        }
-    }
-}
-```
-
-## Task 2: Azure Virtual Network
-
-Create an Azure Virtual Network resource with these conditions:
-
-1. Precondition: The address space must not overlap with the range 10.0.0.0/24.
-2. Postcondition: Ensure that the created VNet has at least two subnets.
-
-### Example:
-```hcl
-variable "vnet_address_space" {
-    type = list(string)
-}
-variable "subnet_prefixes" {
-    type = list(string)
-}
-resource "azurerm_virtual_network" "example" {
-    name = "example-vnet"
-    location = data.azurerm_resource_group.example.location
-    resource_group_name = data.azurerm_resource_group.example.name
-    address_space = var.vnet_address_space
-    dynamic "subnet" {
-        for_each = var.subnet_prefixes
-        content {
-            name = "subnet-${subnet.key + 1}"
-            address_prefixes = [subnet.value]
-        }
-    }
-    lifecycle {
-        precondition {
-            condition = !contains([for cidr in var.vnet_address_space : cidrsubnet(cidr, 0, 0) == "10.0.0.0/24"], true)
-            error_message = "The VNet address space must not overlap with 10.0.0.0/24."
-        }
-        postcondition {
-            condition = length(self.subnet) >= 2
-            error_message = "The VNet must have at least two subnets."
-        }
-    }
-}
-```
-
-## Task 3: Azure Key Vault
-
-Implement conditions for an Azure Key Vault:
-
-1. Precondition: If the environment is "prod", ensure that the SKU is "premium".
-2. Postcondition: Verify that the Key Vault has soft-delete enabled.
-
-### Example:
-This is an example on how to solve this task:
-```hcl
-resource "azurerm_key_vault" "example" {
-    name = var.key_vault_name
-    location = data.azurerm_resource_group.example.location
-    resource_group_name = data.azurerm_resource_group.example.name
-    enabled_for_disk_encryption = true
-    tenant_id = data.azurerm_client_config.current.tenant_id
-    soft_delete_retention_days = 7
-    purge_protection_enabled = false
-    sku_name = var.environment == "prod" ? "premium" : "standard"
-    lifecycle {
-        precondition {
-            condition = var.environment != "prod" || var.sku_name == "premium"
-            error_message = "Production environment must use premium SKU for Key Vault."
-        }
-        postcondition {
-            condition = self.soft_delete_retention_days > 0
-            error_message = "Soft-delete must be enabled for the Key Vault."
-        }
-    }
-}
-```
-
-## Task 4: Azure SQL Database
-
-Set up an Azure SQL Database with the following conditions:
-
-1. Precondition: The database name must not contain the word "test" in production environments.
-2. Postcondition: Confirm that the created database has TDE (Transparent Data Encryption) enabled.
-
-### Example:
-```hcl
-variable "environment" {
-    type = string
-}
-variable "database_name" {
-    type = string
-}
-resource "azurerm_mssql_server" "example" {
-    name = "example-sqlserver"
-    resource_group_name = data.azurerm_resource_group.example.name
-    location = data.azurerm_resource_group.example.location
-    version = "12.0"
-    administrator_login = "sqladmin"
-    administrator_login_password = "P@ssw0rd1234!"
-}
-resource "azurerm_mssql_database" "example" {
-    name = var.database_name
-    server_id = azurerm_mssql_server.example.id
-    license_type   = "LicenseIncluded"
-    threat_detection_policy {
-        state = "Enabled"
-    }
-    lifecycle {
-        precondition {
-            condition = var.environment != "production" || !can(regex("(?i)test", var.database_name))
-            error_message = "Database name must not contain the word 'test' in production environments."
-        }
-        postcondition {
-            condition = self.threat_detection_policy[0].state == "Enabled"
-            error_message = "Transparent Data Encryption (TDE) must be enabled for the SQL Database."
-        }
-    }
-}
-```
-
-## Task 5: Azure Container Registry
-
-Create an Azure Container Registry with these requirements:
-
-1. Precondition: Ensure that the SKU is either "Premium" or "Standard".
-2. Postcondition: Verify that admin user is disabled for the created registry.
-
-### Example:
-This is an example on how to solve this task:
-```hcl
-resource "azurerm_container_registry" "example" {
-    name = var.acr_name
-    resource_group_name = data.azurerm_resource_group.example.name
-    location = data.azurerm_resource_group.example.location
-    sku = var.acr_sku
-    admin_enabled = false
-    lifecycle {
-        precondition {
-            condition = var.acr_sku == "Premium" || var.acr_sku == "Standard"
-            error_message = "ACR SKU must be either Premium or Standard."
-        }
-        postcondition {
-            condition = self.admin_enabled == false
-            error_message = "Admin user must be disabled for the Container Registry."
-        }
-    }
-}
-```
-
-## Bonus Task: Azure Function App
-
-Implement complex pre and postconditions for an Azure Function App:
-
-1. Precondition: 
-   - Ensure that the runtime stack is compatible with the chosen OS type.
-   - If the environment is "prod", require at least the "Standard" plan.
-
-2. Postcondition:
-   - Verify that HTTPS-only access is enabled.
-   - Ensure that the Function App has at least one application setting defined.
-
-### Example:
-```hcl
-variable "environment" {
-    type = string
-}
-variable "function_app_name" {
-    type = string
-}
-variable "os_type" {
-    type = string
-    validation {
-        condition = contains(["Windows", "Linux"], var.os_type)
-        error_message = "OS type must be either 'Windows' or 'Linux'."
-    }
-}
-variable "runtime_stack" {
-    type = string
-}
-variable "storage_account_name" {
-    type = string
-}
 locals {
-    valid_windows_stacks = ["dotnet", "node", "java", "powershell"]
-    valid_linux_stacks = ["dotnet", "node", "python", "java"]
-    plan_sku = var.environment == "prod" ? "S1" : "B1"
-}
-resource "azurerm_storage_account" "example" {
-    name = var.storage_account_name
-    resource_group_name = data.azurerm_resource_group.example.name
-    location = data.azurerm_resource_group.example.location
-    account_tier = "Standard"
-    account_replication_type = "LRS"
-}
-resource "azurerm_service_plan" "example" {
-    name = "${var.function_app_name}-plan"
-    resource_group_name = data.azurerm_resource_group.example.name
-    location = data.azurerm_resource_group.example.location
-    os_type = var.os_type
-    sku_name = local.plan_sku
-}
-resource "azurerm_function_app" "example" {
-    name = var.function_app_name
-    location = data.azurerm_resource_group.example.location
-    resource_group_name = data.azurerm_resource_group.example.name
-    app_service_plan_id = azurerm_service_plan.example.id
-    storage_account_name = azurerm_storage_account.example.name
-    storage_account_access_key = azurerm_storage_account.example.primary_access_key
-    os_type = var.os_type
-    version = "~4"
-    app_settings = {
-        "FUNCTIONS_WORKER_RUNTIME" = var.runtime_stack
-    }
-    https_only = true
-    lifecycle {
-        precondition {
-            condition = (
-                (var.os_type == "Windows" && contains(local.valid_windows_stacks, var.runtime_stack)) ||
-                (var.os_type == "Linux" && contains(local.valid_linux_stacks, var.runtime_stack))
-            )
-            error_message = "The selected runtime stack is not compatible with the chosen OS type. For Windows, use one of: ${join(", ", local.valid_windows_stacks)}. For Linux, use one of: ${join(", ", local.valid_linux_stacks)}."
-        }
-        precondition {
-            condition = var.environment != "prod" || can(regex("^(S|P)", azurerm_service_plan.example.sku_name))
-            error_message = "Production environment requires at least a Standard (S1) plan. Current plan: ${azurerm_service_plan.example.sku_name}"
-        }
-        postcondition {
-            condition = self.https_only
-            error_message = "HTTPS-only access must be enabled for the Function App."
-        }
-        postcondition {
-            condition = length(self.app_settings) > 0
-            error_message = "At least one application setting must be defined for the Function App."
-        }
-    }
+  overlapping_reserved = [
+    for r in var.reserved_cidrs : r
+    if cidrhost(
+      "${split("/", var.network_cidr)[0]}/${min(tonumber(split("/", var.network_cidr)[1]), tonumber(split("/", r)[1]))}", 0
+      ) == cidrhost(
+      "${split("/", r)[0]}/${min(tonumber(split("/", var.network_cidr)[1]), tonumber(split("/", r)[1]))}", 0
+    )
+  ]
 }
 ```
+
+Test both directions: `network_cidr = "192.168.0.0/16"` (contains the reserved range) and `reserved_cidrs = ["10.0.0.0/8"]` with the default `10.150.0.0/24` (inside the reserved range).
+
+## Task 2: Pool Free Space
+
+Add the pool postcondition from [Postconditions](#postconditions). Try `terraform apply -var min_free_gib=100000`, then look at `terraform state list`: the pool is there even though the apply failed.
+
+## Task 3: Disk vs Image Size
+
+A VM disk that is a copy-on-write clone must be at least as large as its base image. Add a precondition to the disk volume that compares `var.disk_gib` with the base volume's `capacity`.
+
+### Example
+```hcl
+resource "libvirt_volume" "disk" {
+  # ...
+  lifecycle {
+    precondition {
+      condition     = var.disk_gib * local.gib >= libvirt_volume.base.capacity
+      error_message = "disk_gib (${var.disk_gib}) is smaller than the base image (${ceil(libvirt_volume.base.capacity / local.gib)} GiB)."
+    }
+  }
+}
+```
+
+Run it with `disk_gib = 1` and notice *when* it fails: after the download, not during plan.
+
+## Task 4: VM Fits the Host
+
+Use the `libvirt_node_info` data source to stop a VM from asking for more than half of the host's memory.
+
+### Example
+```hcl
+data "libvirt_node_info" "host" {}
+
+resource "libvirt_domain" "vm" {
+  memory      = var.memory_mb
+  memory_unit = "MiB"
+  # ...
+
+  lifecycle {
+    precondition {
+      condition     = var.memory_mb * 1024 <= data.libvirt_node_info.host.memory_total_kb / 2
+      error_message = "memory_mb (${var.memory_mb}) is more than half of this host's ${floor(data.libvirt_node_info.host.memory_total_kb / 1024)} MiB."
+    }
+  }
+}
+```
+
+The limit adapts to whoever runs the code: a 16 GiB laptop allows 8 GiB, a 256 GiB server 128 GiB.
+
+## Task 5: The VM Actually Started
+
+Add two postconditions to the VM: it must be running, and it must have at least one network interface.
+
+### Example
+```hcl
+    postcondition {
+      condition     = self.running
+      error_message = "VM ${self.name} was created but isn't running."
+    }
+
+    postcondition {
+      condition     = length(coalesce(self.devices.interfaces, [])) > 0
+      error_message = "VM ${self.name} has no network interface."
+    }
+```
+
+The second one looks unnecessary, since you *wrote* the interface. But Terraform silently ignores a misspelled key inside a nested attribute: change `interfaces` to `interface` in `main.tf` and run `terraform apply`. Without the postcondition you'd get a VM with no network and no error.
+
+## Bonus Task: Postcondition on a Data Source
+
+Data sources can have postconditions too. Read the VM's address with `libvirt_domain_interface_addresses` and check that it is inside `network_cidr`.
+
+### Example
+```hcl
+data "libvirt_domain_interface_addresses" "vm" {
+  domain = libvirt_domain.vm.name
+  source = "lease"
+
+  lifecycle {
+    postcondition {
+      condition = anytrue([
+        for i in self.interfaces : anytrue([
+          for a in i.addrs : a.type == "ipv4" && cidrhost("${a.addr}/${split("/", var.network_cidr)[1]}", 0) == cidrhost(var.network_cidr, 0)
+        ])
+      ])
+      error_message = "${libvirt_domain.vm.name} has no IPv4 address inside ${var.network_cidr}."
+    }
+  }
+}
+```
+
+## Testing Conditions
+
+`example/tests/conditions.tftest.hcl` tests the conditions with a mocked provider. A few things about testing conditions that the example had to work around, and that you'll run into too:
+
+| Situation | Solution |
+|-----------|----------|
+| A precondition depends on a value only known after apply (the image size) | `override_resource` with `override_during = plan`, so the value is known at plan time where `expect_failures` can catch it |
+| A postcondition test reuses a resource an earlier run already created, so the override never applies | Give the run its own state with `state_key` (Terraform 1.11+) |
+| The condition checks a value the configuration sets (`running = true`) | Can't be tested with mocks: overrides only replace computed values. It's there for real failures |
+| The value is a computed *nested list* (the data source's `interfaces`) | Terraform 1.16/1.17 can't mock it (`expected object type, found tuple`). Verify with a real apply |
 
 Remember to use appropriate error messages that clearly explain why a condition failed and what the correct configuration should be.

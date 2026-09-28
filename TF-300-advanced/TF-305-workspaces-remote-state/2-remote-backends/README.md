@@ -2,9 +2,10 @@
 
 **Course**: TF-305 Workspaces & Remote State  
 **Section**: 2 of 4  
-**Duration**: 20 minutes  
+**Duration**: 40 minutes  
 **Prerequisites**: TF-104 (State Management & CLI), Section 1 (Workspaces)  
-**Terraform Version**: 1.11+ (for S3 native locking)
+**Terraform Version**: 1.11+ (for S3 native locking)  
+**Needs**: Docker, for the hands-on (no cloud account)
 
 ---
 
@@ -22,8 +23,9 @@ By the end of this section, you will be able to:
 - ✅ Configure the HCP Terraform (cloud) backend
 - ✅ Configure the Azure Storage backend
 - ✅ Configure the S3 backend (AWS)
-- ✅ Understand state locking and why it matters
-- ✅ Migrate local state to a remote backend
+- ✅ Run a real S3 backend locally and migrate local state into it
+- ✅ See state locking refuse a second apply, and understand why
+- ✅ Keep environment-specific backend settings out of your code with partial configuration
 
 ---
 
@@ -102,6 +104,8 @@ terraform apply
 
 ## 📚 Backend 2: Azure Storage (azurerm)
 
+> 📖 Reference: needs an Azure subscription. The [hands-on](#-hands-on-a-real-s3-backend-without-a-cloud-account) below teaches the same concepts for free.
+
 For Azure-based teams, Azure Blob Storage provides a reliable remote backend with built-in state locking via blob leases.
 
 ### Configuration
@@ -164,6 +168,8 @@ backend "azurerm" {
 ---
 
 ## 📚 Backend 3: S3 (AWS)
+
+> 📖 Reference: needs an AWS account. The [hands-on](#-hands-on-a-real-s3-backend-without-a-cloud-account) below uses this exact backend against a local S3 API.
 
 For AWS-based teams, S3 provides state storage with locking.
 
@@ -440,9 +446,10 @@ With locking:
 
 ```
 Person A: terraform apply  → acquires lock → applies → releases lock
-Person B: terraform apply  → waits for lock → acquires lock → applies → releases lock
-                                              (sequential, safe)
+Person B: terraform apply  → lock is taken → Error acquiring the state lock
 ```
+
+By default Person B fails immediately. Add `-lock-timeout=5m` to wait for the lock instead.
 
 ### Locking by Backend
 
@@ -471,9 +478,96 @@ terraform init
 # Step 3: Verify state was migrated
 terraform state list
 
-# Step 4: Delete local state file (it's now in the remote backend)
-Remove-Item terraform.tfstate
-Remove-Item terraform.tfstate.backup
+# Step 4: Delete the local state files (the state is now in the remote backend)
+rm terraform.tfstate terraform.tfstate.backup
+```
+
+---
+
+## 🧪 Hands-On: A Real S3 Backend Without a Cloud Account
+
+**Directory**: [`example/`](./example/)
+
+You'll use the real `s3` backend, the same one teams use against AWS, but pointed at [Moto](https://github.com/getmoto/moto): an open-source server that imitates the AWS APIs, running in Docker on your machine. No account, no bill. Terraform sends exactly the calls it would send to AWS, including the conditional writes that S3 native locking relies on.
+
+### Step 1: Start Moto and bootstrap the state bucket
+
+```bash
+docker run -d --name moto -p 5000:5000 motoserver/moto:latest
+
+cd example/bootstrap
+terraform init
+terraform apply
+```
+
+Why a separate configuration? The bucket has to exist *before* any configuration can store its state in it, so it can't hold the state of the configuration that creates it. The bootstrap keeps its own (tiny) state locally. Versioning is enabled, so every state change is kept.
+
+### Step 2: Start with local state
+
+```bash
+cd ../app
+terraform init
+terraform apply -var apply_seconds=0
+ls   # terraform.tfstate is here, on your disk
+```
+
+### Step 3: Migrate to S3
+
+```bash
+mv backend.tf.example backend.tf
+terraform init -backend-config=moto.s3.tfbackend
+# Do you want to copy existing state to the new backend?
+#   Enter a value: yes
+
+terraform state list   # terraform_data.app, now read from S3
+```
+
+Look at the two files. `backend.tf` only has what's the same everywhere (the state `key` and `use_lockfile`). Where the bucket lives and how to reach it is in `moto.s3.tfbackend`, a **partial backend configuration** passed at `init`. For a real AWS account you'd write a second file with just `bucket` and `region` and change nothing else.
+
+### Step 4: Watch the lock work
+
+Open two terminals in `example/app`:
+
+```bash
+# Terminal 1 (takes 20 seconds on purpose)
+terraform apply -auto-approve -var app_version=2.0.0
+
+# Terminal 2, while terminal 1 is still running
+terraform apply -auto-approve -var app_version=3.0.0
+```
+
+Terminal 2 is refused:
+
+```
+Error: Error acquiring the state lock
+Error message: operation error S3: PutObject, https response error
+StatusCode: 412, ...
+api error PreconditionFailed: At least one of the pre-conditions you
+specified did not hold
+Lock Info:
+  Path:      tfstate/app/terraform.tfstate
+  Operation: OperationTypeApply
+  Who:       you@your-machine
+```
+
+That `412 PreconditionFailed` *is* the lock. Terraform tries to create `app/terraform.tfstate.tflock` with "only if it doesn't exist yet" (an `If-None-Match` conditional write), and S3 says no because terminal 1 already created it. When terminal 1 finishes it deletes the `.tflock` object. Try terminal 2 again with `-lock-timeout=1m` while terminal 1 is running and it waits instead.
+
+### Step 5: Workspaces in S3
+
+```bash
+terraform workspace new dev
+terraform apply -auto-approve -var apply_seconds=0
+curl -s "http://localhost:5000/tfstate?list-type=2" | grep -o "<Key>[^<]*</Key>"
+# <Key>app/terraform.tfstate</Key>
+# <Key>env:/dev/app/terraform.tfstate</Key>
+```
+
+Each workspace gets its own state object under `env:/<workspace>/`.
+
+### Clean up
+
+```bash
+docker rm -f moto   # Moto keeps everything in memory
 ```
 
 ---

@@ -78,6 +78,48 @@ resource "local_file" "example_map" {
     content_sha512       = "43c155024ad198908632f2d6606241b535d919c3d94ca196d991906cd519197946
 ```
 
+4. **New in Terraform 1.16** — add `-json` to get the same resource as machine-readable JSON:
+
+```bash
+terraform state show -json 'local_file.example_map["file1.txt"]'
+```
+
+```json
+{
+  "format_version": "1.0",
+  "resource": {
+    "address": "local_file.example_map[\"file1.txt\"]",
+    "mode": "managed",
+    "type": "local_file",
+    "name": "example_map",
+    "index": "file1.txt",
+    "provider_name": "registry.terraform.io/hashicorp/local",
+    "schema_version": 0,
+    "values": {
+      "content": "This is the content of file 1",
+      "filename": "./dev_file1.txt",
+      "id": "f6867903731c30142798e8d1ab20d14157947723",
+      ...
+    },
+    "sensitive_values": {
+      "sensitive_content": true
+    }
+  },
+  "diagnostics": []
+}
+```
+
+5. Extract a single attribute in a script with `jq`:
+
+```bash
+terraform state show -json 'local_file.example_map["file1.txt"]' | jq -r '.resource.values.filename'
+# ./dev_file1.txt
+```
+
+> 💡 **Why this matters**: The plain `terraform state show` output looks like HCL but is meant for humans — don't parse it. Before 1.16 the only machine-readable option was `terraform show -json`, which dumps the **whole** state. `state show -json` returns just one resource, in the same format as `terraform show -json`.
+
+> ⚠️ **Sensitive values are NOT redacted in JSON output.** Plain `terraform state show` prints `(sensitive value)`, but `-json` prints the real value in `values` and only *flags* it in `sensitive_values`. Treat this output like the state file itself — don't paste it into CI logs or tickets.
+
 ### Task 5: Remove a Resource from State
 
 1. Choose a resource to remove from the state (but not from the actual infrastructure).

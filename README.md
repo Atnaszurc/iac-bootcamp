@@ -3,11 +3,11 @@
 **A comprehensive, hands-on training program to master Infrastructure as Code**
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Terraform](https://img.shields.io/badge/Terraform-1.15+-purple.svg)](https://www.terraform.io/)
+[![Terraform](https://img.shields.io/badge/Terraform-1.16+-purple.svg)](https://www.terraform.io/)
 [![Packer](https://img.shields.io/badge/Packer-1.14+-blue.svg)](https://www.packer.io/)
-[![Version](https://img.shields.io/badge/version-1.4.0-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.5.0-green.svg)](CHANGELOG.md)
 
-> 📋 **[View Changelog](CHANGELOG.md)** - See what's new in version 1.4.0
+> 📋 **[View Changelog](CHANGELOG.md)** - See what's new in version 1.5.0
 
 ---
 
@@ -23,7 +23,7 @@ This training program takes you from **zero knowledge** to **advanced proficienc
 - ✅ **Modular Design** - Choose your learning path
 - ✅ **Production-Ready Skills** - Enterprise-grade patterns
 - ✅ **Cloud-Agnostic** - Concepts apply to any provider
-- ✅ **Modern Terraform** - Latest features (1.15+)
+- ✅ **Modern Terraform** - Latest features (1.16+, with a preview of 1.17 beta)
 
 ---
 
@@ -46,6 +46,8 @@ TF-100: Terraform Fundamentals (6 hours)
 └── TF-104: State Management & CLI (1h)
     └── [+] terraform console as a learning tool
     └── [+] validate command backend checking (1.15+)
+    └── [+] state show -json, console -scope (1.16+)
+    └── [+] plan -minimal-refresh (1.17 beta)
 
 TF-200: Terraform Modules & Patterns (6 hours)
 ├── TF-201: Module Design & Composition (1.5h)
@@ -67,6 +69,7 @@ TF-300: Testing, Validation & Advanced Features (8 hours)
 │   └── [+] lifecycle meta-arguments (complete unit)
 │   └── [+] write-only attributes (1.11+)
 │   └── [+] improved deprecation detection & messages (1.15+)
+│   └── [+] lifecycle destroy = false (1.16+)
 ├── TF-303: Terraform Test Framework (1h)
 │   └── [+] JUnit XML output, parallel runs, override_during (1.11-1.12)
 │   └── [+] mock block functions support (1.15+)
@@ -75,11 +78,12 @@ TF-300: Testing, Validation & Advanced Features (8 hours)
 ├── TF-305: Workspaces & Remote State (1.5h)
 │   └── [+] S3 native state locking (1.11+)
 │   └── [+] S3 backend aws login authentication (1.15+)
+│   └── [+] workspace list -json (1.16+)
 ├── TF-306: Terraform Functions Deep Dive (1.5h)
 │   └── [+] templatestring, ephemeralasnull, element() negative indices (1.9-1.10)
 │   └── [+] convert() function for inline type conversions (1.15+)
-└── TF-307: List Resources, terraform query & Actions (1h) [NEW — 1.14] *
-    └── [*] Conceptual/design-focused (requires provider support)
+└── TF-307: List Resources, terraform query & Actions (1.5h) [1.14, updated for 1.16]
+    └── [+] hands-on actions with the local provider; destroy triggers, on_failure, caller (1.16+)
 
 TF-400: HCP Terraform & Enterprise Features (6 hours)
 ├── TF-401: HCP Terraform Fundamentals (1.5h)
@@ -373,7 +377,7 @@ hashi-training/
 - Add modules as you grow
 
 **4. Modern Features**
-- Terraform 1.15+ features
+- Terraform 1.16+ features (and 1.17 beta preview)
 - Ephemeral resources & values (1.10+)
 - Write-only attributes (1.11+)
 - Test framework with JUnit & parallel runs (1.11-1.12)
@@ -383,6 +387,8 @@ hashi-training/
 - List resources & Actions block (1.14+)
 - Deprecated attribute for variables/outputs (1.15+)
 - convert() function & module source variables (1.15+)
+- Action destroy triggers, on_failure & caller; terraform_data store; lifecycle destroy = false (1.16+)
+- plan -minimal-refresh (1.17 beta)
 - Latest best practices
 
 **5. Production-Ready**
@@ -437,11 +443,11 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) file for
 
 ## 🗺️ Roadmap
 
-### Current Version: 3.4 (Terraform 1.15 Features Added)
+### Current Version: 3.5 (Terraform 1.16 Features Added)
 - ✅ University-style course numbering (100-400 levels)
 - ✅ Modular cloud approach
 - ✅ Libvirt-based core training
-- ✅ Terraform 1.15+ features
+- ✅ Terraform 1.16+ features
 - ✅ Test framework integration
 - ✅ Ansible provisioner examples
 - ✅ Comprehensive documentation
@@ -470,6 +476,12 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) file for
 - ✅ Validate command backend checking (TF-104, 1.15+)
 - ✅ Stacks input variable validation (TF-405, 1.15+)
 - ✅ Output type constraints (TF-301, 1.15+)
+- ✅ TF-307 rewritten: correct action/query syntax, hands-on local_command actions, destroy triggers, on_failure, caller (1.16+)
+- ✅ Capturing ephemeral values with terraform_data store (TF-301, 1.16+)
+- ✅ lifecycle destroy = false (TF-302, 1.16+)
+- ✅ console -scope, state show -json, workspace list -json (TF-104, TF-305, 1.16+)
+- ✅ plan -minimal-refresh (TF-104, 1.17 beta)
+- ✅ libvirt examples corrected for provider 0.9.x and verified on a real libvirt host
 
 ### Planned
 - [ ] Kubernetes integration examples

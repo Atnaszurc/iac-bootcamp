@@ -6,11 +6,11 @@
 mock_provider "aws" {
   mock_resource "aws_vpn_connection" {
     defaults = {
-      id                      = "vpn-0abc123def456789"
-      tunnel1_address         = "203.0.113.10"
-      tunnel2_address         = "203.0.113.11"
-      tunnel1_preshared_key   = "mock-preshared-key-1"
-      tunnel2_preshared_key   = "mock-preshared-key-2"
+      id                         = "vpn-0abc123def456789"
+      tunnel1_address            = "203.0.113.10"
+      tunnel2_address            = "203.0.113.11"
+      tunnel1_preshared_key      = "mock-preshared-key-1"
+      tunnel2_preshared_key      = "mock-preshared-key-2"
       tunnel1_cgw_inside_address = "169.254.21.2"
       tunnel1_vgw_inside_address = "169.254.21.1"
     }
@@ -23,25 +23,25 @@ mock_provider "azurerm" {
       id = "/subscriptions/12345678-1234-9876-4563-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet"
     }
   }
-  
+
   mock_resource "azurerm_subnet" {
     defaults = {
       id = "/subscriptions/12345678-1234-9876-4563-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/GatewaySubnet"
     }
   }
-  
+
   mock_resource "azurerm_public_ip" {
     defaults = {
       id = "/subscriptions/12345678-1234-9876-4563-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/publicIPAddresses/test-pip"
     }
   }
-  
+
   mock_resource "azurerm_virtual_network_gateway" {
     defaults = {
       id = "/subscriptions/12345678-1234-9876-4563-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworkGateways/test-vng"
     }
   }
-  
+
   mock_resource "azurerm_local_network_gateway" {
     defaults = {
       id = "/subscriptions/12345678-1234-9876-4563-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/localNetworkGateways/test-lng"
